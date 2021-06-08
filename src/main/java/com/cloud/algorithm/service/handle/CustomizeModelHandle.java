@@ -14,6 +14,8 @@ import com.cloud.algorithm.model.dto.*;
 import com.cloud.algorithm.model.dto.apcPlant.Adapter;
 import com.cloud.algorithm.model.dto.apcPlant.request.customize.PythonAdapter;
 import com.cloud.algorithm.model.dto.apcPlant.request.customize.PythonOutParam;
+import com.cloud.algorithm.model.dto.apcPlant.response.customize.CPythonDataDto;
+import com.cloud.algorithm.model.dto.apcPlant.response.customize.CPythonResponse4PlantDto;
 import com.cloud.algorithm.service.Handle;
 import com.cloud.algorithm.service.ModelCacheService;
 import lombok.extern.slf4j.Slf4j;
@@ -171,7 +173,7 @@ public class CustomizeModelHandle implements Handle {
     /**
      * 将算法输出值幅值到输出引脚。
      */
-    public void computresulteprocess(BaseModelImp baseModelImp, CPythonDataDto data) {
+    public void computresulteprocess(BaseModelImp baseModelImp, Map<String, PinValueDto> data) {
         if (!CollectionUtils.isEmpty(baseModelImp.getPropertyImpList())) {
             baseModelImp.getPropertyImpList().stream().filter(p -> {
                 if (p.getPindir().equals(AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_OUTPUT.getCode())) {
@@ -180,10 +182,10 @@ public class CustomizeModelHandle implements Handle {
                     return false;
                 }
             }).forEach(p -> {
-                if (!CollectionUtils.isEmpty(data.getMvData())) {
-                    data.getMvData().forEach(mv -> {
-                        if (p.getModlePinName().equals(mv.getPinname())) {
-                            p.setValue(mv.getValue());
+                if (!CollectionUtils.isEmpty(data)) {
+                    data.forEach((k, v) -> {
+                        if (p.getModlePinName().equals(k)) {
+                            p.setValue(v.getValue());
                         }
                     });
                 }
@@ -204,11 +206,31 @@ public class CustomizeModelHandle implements Handle {
     }
 
 
-    private CPythonResponseDto buildResponse(String msg, int status) {
-        CPythonResponseDto cPythonResponseDto = new CPythonResponseDto();
+    private CPythonResponse4PlantDto buildResponse(String msg, int status) {
+        CPythonResponse4PlantDto cPythonResponseDto = new CPythonResponse4PlantDto();
         cPythonResponseDto.setMessage(msg);
         cPythonResponseDto.setStatus(status);
         return cPythonResponseDto;
+    }
+
+    private CPythonResponse4PlantDto buildResponse(CPythonResponseDto cPythonResponseDto) {
+        CPythonResponse4PlantDto cPythonResponse4PlantDto = new CPythonResponse4PlantDto();
+        cPythonResponse4PlantDto.setMessage(cPythonResponseDto.getMessage());
+        cPythonResponse4PlantDto.setStatus(cPythonResponseDto.getStatus());
+        cPythonResponse4PlantDto.setAlgorithmContext(cPythonResponseDto.getAlgorithmContext());
+        List<PinDataDto> data = new ArrayList<>();
+        if (!CollectionUtils.isEmpty(cPythonResponseDto.getData())) {
+            cPythonResponseDto.getData().forEach((k, v) -> {
+                PinDataDto pinDataDto = new PinDataDto();
+                pinDataDto.setValue(v.getValue());
+                pinDataDto.setPinname(k);
+                data.add(pinDataDto);
+            });
+        }
+        CPythonDataDto cPythonDataDto = new CPythonDataDto();
+        cPythonDataDto.setMvData(data);
+        cPythonResponse4PlantDto.setData(cPythonDataDto);
+        return cPythonResponse4PlantDto;
     }
 
     private CallBaseRequestDto buildRequest(BaseModelImp baseModelImp, Object context) {
@@ -238,9 +260,9 @@ public class CustomizeModelHandle implements Handle {
         return dto;
     }
 
-    private CPythonResponseDto callCPython(BaseModelImp baseModelImp, CallBaseRequestDto callBaseRequestDto) {
+    private CPythonResponse4PlantDto callCPython(BaseModelImp baseModelImp, CallBaseRequestDto callBaseRequestDto) {
 
-        String requestUrl = algorithmRouteConfig.getUrl() + algorithmRouteConfig.getPid();
+        String requestUrl = algorithmRouteConfig.getUrl() + algorithmRouteConfig.getPython();
         ResponseEntity<CPythonResponseDto> responseEntity = null;
         try {
             responseEntity = restTemplateNoCloud.postForEntity(requestUrl,
@@ -267,8 +289,7 @@ public class CustomizeModelHandle implements Handle {
             modleStatusCache.setAlgorithmContext(cPythonResponseDto.getAlgorithmContext());
             modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
         }
-
-        return cPythonResponseDto;
+        return buildResponse(cPythonResponseDto);
 
     }
 

@@ -12,6 +12,8 @@ import com.cloud.algorithm.model.dto.*;
 import com.cloud.algorithm.model.dto.apcPlant.Adapter;
 import com.cloud.algorithm.model.dto.apcPlant.request.fpid.PidModleAdapter;
 import com.cloud.algorithm.model.dto.apcPlant.request.fpid.PidOutPutproperty;
+import com.cloud.algorithm.model.dto.apcPlant.response.fpid.PidData4PlantDto;
+import com.cloud.algorithm.model.dto.apcPlant.response.fpid.PidResponse4PlantDto;
 import com.cloud.algorithm.service.Handle;
 import com.cloud.algorithm.service.ModelCacheService;
 import lombok.extern.slf4j.Slf4j;
@@ -77,20 +79,20 @@ public class PidModelHandle implements Handle {
         }
 
         //获取模型状态信息
-        Object modleStatusCache=modelCacheService.getModelStatus(baseModelImp.getModleId());
+        Object modleStatusCache = modelCacheService.getModelStatus(baseModelImp.getModleId());
 
         if (ObjectUtils.isEmpty(modleStatusCache)) {
             //初始化模型缓存状态,并更新
-            modleStatusCache=ModleStatusCache.builder()
+            modleStatusCache = ModleStatusCache.builder()
                     .modleId(baseModelImp.getModleId())
                     .code(baseModelImp.getModletype())
                     .algorithmContext(new JSONObject())
                     .build();
-            modelCacheService.updateModelStatus(baseModelImp.getModleId(),modleStatusCache);
+            modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
 
         }
         //数据组装
-        CallBaseRequestDto callBaseRequestDto = buildRequest(baseModelImp, ((ModleStatusCache)modleStatusCache).getAlgorithmContext());
+        CallBaseRequestDto callBaseRequestDto = buildRequest(baseModelImp, ((ModleStatusCache) modleStatusCache).getAlgorithmContext());
         //请求input
         //将请求结果返回给apc平台
         return callPid(baseModelImp, callBaseRequestDto);
@@ -99,9 +101,10 @@ public class PidModelHandle implements Handle {
 
     /**
      * 更新模型输出引脚的mv值
+     *
      * @param data
      * @param baseModelImp
-     * */
+     */
     private void computresulteprocess(BaseModelImp baseModelImp, PidDataDto data) {
         if (!CollectionUtils.isEmpty(baseModelImp.getPropertyImpList())) {
             baseModelImp.getPropertyImpList().stream().filter(p -> {
@@ -112,12 +115,10 @@ public class PidModelHandle implements Handle {
                 }
             }).forEach(p -> {
 
-                if (!CollectionUtils.isEmpty(data.getMvData())) {
-                    data.getMvData().forEach(mv -> {
-                        if (mv.getPinname().equals(p.getModlePinName())) {
-                            p.setValue(mv.getValue());
-                        }
-                    });
+                if (!ObjectUtils.isEmpty(data.getMv())) {
+                    if (data.getMv().getPinname().equals(p.getModlePinName())) {
+                        p.setValue(data.getMv().getValue());
+                    }
                 }
 
             });
@@ -143,13 +144,13 @@ public class PidModelHandle implements Handle {
     }
 
     @Override
-    public void stop(Long modelId){
+    public void stop(Long modelId) {
         modelCacheService.deletModelStatus(modelId);
     }
 
     @Override
-    public BaseModelImp convertModel(Adapter adapter){
-        PidModleAdapter pidModleAdapter=(PidModleAdapter)adapter;
+    public BaseModelImp convertModel(Adapter adapter) {
+        PidModleAdapter pidModleAdapter = (PidModleAdapter) adapter;
         PidModel pidModle = new PidModel();
         pidModle.setModleEnable(1);
         pidModle.setModleName(pidModleAdapter.getBasemodelparam().getModelname());
@@ -185,14 +186,14 @@ public class PidModelHandle implements Handle {
         pidModle.getPropertyImpList().add(initpidmvproperty);
 
 
-        BaseModelProperty initpidmvupproperty = initpidproperty(AlgorithmModelProperty.MODEL_PROPERTY_MVUP.getCode(),  pidModleAdapter.getBasemodelparam().getModelid(), pidModleAdapter.getInputparam().getMvuppinvalue());
+        BaseModelProperty initpidmvupproperty = initpidproperty(AlgorithmModelProperty.MODEL_PROPERTY_MVUP.getCode(), pidModleAdapter.getBasemodelparam().getModelid(), pidModleAdapter.getInputparam().getMvuppinvalue());
         pidModle.getPropertyImpList().add(initpidmvupproperty);
 
-        BaseModelProperty initpidmvdownproperty = initpidproperty(AlgorithmModelProperty.MODEL_PROPERTY_MVDOWN.getCode(),  pidModleAdapter.getBasemodelparam().getModelid(), pidModleAdapter.getInputparam().getMvdownpinvalue());
+        BaseModelProperty initpidmvdownproperty = initpidproperty(AlgorithmModelProperty.MODEL_PROPERTY_MVDOWN.getCode(), pidModleAdapter.getBasemodelparam().getModelid(), pidModleAdapter.getInputparam().getMvdownpinvalue());
         pidModle.getPropertyImpList().add(initpidmvdownproperty);
 
 
-        if ( pidModleAdapter.getInputparam().getFf() != null) {
+        if (pidModleAdapter.getInputparam().getFf() != null) {
             BaseModelProperty ffbasemodleproperty = initpidproperty(AlgorithmModelProperty.MODEL_PROPERTY_FF.getCode(), pidModleAdapter.getBasemodelparam().getModelid(), pidModleAdapter.getInputparam().getFf());//new BaseModlePropertyImp();
             pidModle.getPropertyImpList().add(ffbasemodleproperty);
 
@@ -206,11 +207,11 @@ public class PidModelHandle implements Handle {
         pidModle.getPropertyImpList().add(initpidautoproperty);
 
 
-        for(PidOutPutproperty pidOutPutproperty:pidModleAdapter.getOutputparam()){
+        for (PidOutPutproperty pidOutPutproperty : pidModleAdapter.getOutputparam()) {
             BaseModelProperty outpropertyImp = new BaseModelProperty();
-            outpropertyImp.setRefmodleId( pidModleAdapter.getBasemodelparam().getModelid());
+            outpropertyImp.setRefmodleId(pidModleAdapter.getBasemodelparam().getModelid());
             outpropertyImp.setModleOpcTag("");
-            outpropertyImp.setModlePinName( pidOutPutproperty.getOutputpinname());
+            outpropertyImp.setModlePinName(pidOutPutproperty.getOutputpinname());
             outpropertyImp.setOpcTagName("");
 
             JSONObject resource = new JSONObject();
@@ -223,8 +224,6 @@ public class PidModelHandle implements Handle {
 
         return pidModle;
     }
-
-
 
 
 //    public void updatemodlevalue(PIDModle pidModle){
@@ -336,7 +335,7 @@ public class PidModelHandle implements Handle {
 
 
         JSONObject resource = new JSONObject();
-        resource.put("resource",AlgorithmValueFrom.ALGORITHM_VALUE_FROM_CONSTANT.getCode());
+        resource.put("resource", AlgorithmValueFrom.ALGORITHM_VALUE_FROM_CONSTANT.getCode());
         resource.put("value", properyconstant);
         kpbasemodleproperty.setResource(resource);
         kpbasemodleproperty.setModleOpcTag("");
@@ -353,19 +352,19 @@ public class PidModelHandle implements Handle {
         if ((mvinputpin != null) && (mvoutputpin != null)) {
             //输入直接反写到输出
             mvoutputpin.setValue(mvinputpin.getValue());
-            PidResponseDto pidResponseDto = buildResponse(baseModelImp, 0, 0, 0, "模型短路", 200);
-           return pidResponseDto;
-        }else {
+            PidResponse4PlantDto pidResponseDto = buildResponse(baseModelImp, 0, 0, 0, "模型短路", 200);
+            return pidResponseDto;
+        } else {
             return buildResponse(baseModelImp, 0, 0, 0, "模型短路，但无匹配的输入输出", 123456);
         }
 
     }
 
 
-    private PidResponseDto buildResponse(BaseModelImp baseModelImp, double bkp, double bki, double bkd, String msg, int status) {
+    private PidResponse4PlantDto buildResponse(BaseModelImp baseModelImp, double bkp, double bki, double bkd, String msg, int status) {
 
-        PidResponseDto pidRespon = new PidResponseDto();
-        PidDataDto pidData = new PidDataDto();
+        PidResponse4PlantDto pidRespon = new PidResponse4PlantDto();
+        PidData4PlantDto pidData = new PidData4PlantDto();
         pidRespon.setMessage(msg);
         pidRespon.setStatus(status);
         pidRespon.setData(pidData);
@@ -390,7 +389,7 @@ public class PidModelHandle implements Handle {
             }).forEach(p -> {
                 PinDataDto dmvData = new PinDataDto();
                 dmvData.setPinname(p.getModlePinName());
-                dmvData.setValue( p.getValue());
+                dmvData.setValue(p.getValue());
                 dmvDataList.add(dmvData);
             });
         }
@@ -437,7 +436,7 @@ public class PidModelHandle implements Handle {
                 .build();
     }
 
-    public PidResponseDto callPid(BaseModelImp baseModelImp, CallBaseRequestDto callBaseRequestDto) {
+    public PidResponse4PlantDto callPid(BaseModelImp baseModelImp, CallBaseRequestDto callBaseRequestDto) {
 
         String requestUrl = algorithmRouteConfig.getUrl() + algorithmRouteConfig.getPid();
         ResponseEntity<PidResponseDto> responseEntity = null;
@@ -461,17 +460,17 @@ public class PidModelHandle implements Handle {
 
         PidResponseDto pidResponseDto = responseEntity.getBody();
         //模型缓存上下文更新
-        Object modelStatus=modelCacheService.getModelStatus(baseModelImp.getModleId());
-        if(!ObjectUtils.isEmpty(modelStatus)){
-            ModleStatusCache modleStatusCache=(ModleStatusCache)modelStatus;
+        Object modelStatus = modelCacheService.getModelStatus(baseModelImp.getModleId());
+        if (!ObjectUtils.isEmpty(modelStatus)) {
+            ModleStatusCache modleStatusCache = (ModleStatusCache) modelStatus;
             modleStatusCache.setAlgorithmContext(pidResponseDto.getAlgorithmContext());
-            modelCacheService.updateModelStatus(baseModelImp.getModleId(),modleStatusCache);
+            modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
         }
 
 
         computresulteprocess(baseModelImp, pidResponseDto.getData());
 
-        return buildResponse(baseModelImp, pidResponseDto.getData().getPartkp(), pidResponseDto.getData().getPartki(), pidResponseDto.getData().getPartkd(), pidResponseDto.getMessage(), pidResponseDto.getStatus());
+        return buildResponse(baseModelImp, pidResponseDto.getData().getMv().getPartkp(), pidResponseDto.getData().getMv().getPartki(), pidResponseDto.getData().getMv().getPartkd(), pidResponseDto.getMessage(), pidResponseDto.getStatus());
 
     }
 }

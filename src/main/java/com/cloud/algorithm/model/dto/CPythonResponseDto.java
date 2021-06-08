@@ -4,6 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * @author zzx
  * @version 1.0
@@ -13,6 +16,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class CPythonResponseDto extends BaseModelResponseDto{
-    private CPythonDataDto data;
+    private Map<String,PinValueDto> data;
 
 }

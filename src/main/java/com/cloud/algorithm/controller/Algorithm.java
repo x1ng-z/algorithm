@@ -88,9 +88,9 @@ public class Algorithm {
 
         Handle handle = algorithmModelSericeImp.getMatchHandles(AlgorithmName.PID_MODEL.getCode());
 
-        BaseModelImp mpcModel = handle.convertModel(pidModleAdapter);
+        BaseModelImp modle = handle.convertModel(pidModleAdapter);
 
-        BaseModelResponseDto baseModelResponseDto = algorithmModelSerice.run(mpcModel.getModleId(), AlgorithmName.MPC_MODEL.getCode(), mpcModel);//dmchandle.run(mpcModel);
+        BaseModelResponseDto baseModelResponseDto = algorithmModelSerice.run(modle.getModleId(), AlgorithmName.PID_MODEL.getCode(), modle);//dmchandle.run(mpcModel);
 
         return new ResponseEntity<String>(JSON.toJSONString(baseModelResponseDto), HttpStatus.OK);
 

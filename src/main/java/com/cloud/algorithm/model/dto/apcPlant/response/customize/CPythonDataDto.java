@@ -1,5 +1,6 @@
-package com.cloud.algorithm.model.dto;
+package com.cloud.algorithm.model.dto.apcPlant.response.customize;
 
+import com.cloud.algorithm.model.dto.PinDataDto;
 import lombok.Data;
 
 import java.util.List;

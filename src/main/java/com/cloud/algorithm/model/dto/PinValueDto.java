@@ -8,7 +8,6 @@ import lombok.Data;
  * @date 2021/6/3 17:36
  */
 @Data
-public class PinDataDto implements java.io.Serializable{
+public class PinValueDto implements java.io.Serializable{
     private double value;
-    private String pinname;
 }
