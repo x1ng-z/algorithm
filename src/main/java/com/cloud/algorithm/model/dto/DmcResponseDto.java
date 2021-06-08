@@ -1,6 +1,6 @@
 package com.cloud.algorithm.model.dto;
 
-import com.alibaba.fastjson.annotation.JSONField;
+import com.cloud.algorithm.model.dto.apcPlant.response.dmc.DmcData4PlantDto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;

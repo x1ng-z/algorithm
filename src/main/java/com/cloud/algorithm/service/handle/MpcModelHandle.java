@@ -15,6 +15,10 @@ import com.cloud.algorithm.model.bean.modelproperty.MpcModelProperty;
 import com.cloud.algorithm.model.dto.*;
 import com.cloud.algorithm.model.dto.apcPlant.Adapter;
 import com.cloud.algorithm.model.dto.apcPlant.request.dmc.*;
+import com.cloud.algorithm.model.dto.apcPlant.response.dmc.DmcData4PlantDto;
+import com.cloud.algorithm.model.dto.apcPlant.response.dmc.DmcDmvData4PlantDto;
+import com.cloud.algorithm.model.dto.apcPlant.response.dmc.DmcPvPredictData4PlantDto;
+import com.cloud.algorithm.model.dto.apcPlant.response.dmc.DmcResponse4PlantDto;
 import com.cloud.algorithm.service.BoundCondition;
 import com.cloud.algorithm.service.Handle;
 import com.cloud.algorithm.service.ModelCacheService;
@@ -80,7 +84,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
 
 
     @Override
-    public void stop(Long modelId){
+    public void stop(Long modelId) {
         modelCacheService.deletModelStatus(modelId);
     }
 
@@ -233,9 +237,9 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 //创建构造数据并调用
                 if (!modleStCache.getModelbuild()) {
                     CallBaseRequestDto mpcBuildRequest = mpcBuildRequest((MpcModel) baseModelImp, modleStCache.getAlgorithmContext());
-                    DmcResponseDto dmcResponseDto = callMpc((MpcModel) baseModelImp, mpcBuildRequest);
-                    if (dmcResponseDto.getStatus() != HttpStatus.OK.value()) {
-                        return dmcResponseDto;
+                    DmcResponse4PlantDto dmcResponse4PlantDto = callMpc((MpcModel) baseModelImp, mpcBuildRequest);
+                    if (dmcResponse4PlantDto.getStatus() != HttpStatus.OK.value()) {
+                        return dmcResponse4PlantDto;
                     }
                 }
 
@@ -261,99 +265,108 @@ public class MpcModelHandle implements Handle, BoundCondition {
 
     }
 
+
     /**
      * 处理模型构造和计算数据
      * 更新模型输出引脚的mv值
      */
-    public DmcResponseDto computresulteprocess(MpcModel baseModelImp, JSONObject data) {
+    public DmcResponse4PlantDto buildresulteprocess(MpcModel baseModelImp, DmcResponseDto data) {
 
         //处理模型构造数据
-        if (data.getJSONObject("data").getString("step").equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_BUILD.getStep())) {
+        if (data.getData().getStep().equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_BUILD.getStep())) {
             // 更新模型状态及上下文
             Object modelStatus = modelCacheService.getModelStatus(baseModelImp.getModleId());
             if (!ObjectUtils.isEmpty(modelStatus)) {
                 ModleStatusCache cache = (ModleStatusCache) modelStatus;
-                cache.setAlgorithmContext(data.get("context"));
+                cache.setAlgorithmContext(data.getAlgorithmContext());
                 cache.setModelbuild(true);
                 modelCacheService.updateModelStatus(baseModelImp.getModleId(), modelStatus);
             }
-            return mpcBuildResponse(data.getString("msg"), data.getInteger("status"));
-
-        } else
-            //处理模型计算数据
-            if (data.getJSONObject("data").getString("step").equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_COMPUTE.getStep())) {
-
-                // 更新模型上下文
-                Object modelStatus = modelCacheService.getModelStatus(baseModelImp.getModleId());
-                if (!ObjectUtils.isEmpty(modelStatus)) {
-                    ModleStatusCache cache = (ModleStatusCache) modelStatus;
-                    cache.setAlgorithmContext(data.get("context"));
-                    modelCacheService.updateModelStatus(baseModelImp.getModleId(), modelStatus);
-                }
+            return mpcBuildResponse(data.getMessage(), data.getStatus());
+        }
+        return mpcErrorResponse("无法匹配mpc计算的阶段");
+    }
 
 
-                JSONObject modlestatus = data.getJSONObject("data");//JSONObject.parseObject(data);
-                JSONArray predictpvJson = modlestatus.getJSONArray("predict");//
-                JSONArray eJson = modlestatus.getJSONArray("e");//
-                JSONArray funelupAnddownJson = modlestatus.getJSONArray("funelupAnddown");//
-                JSONArray dmvJson = modlestatus.getJSONArray("dmv");//
-                JSONArray dffJson = modlestatus.getJSONArray("dff");//
+    /**
+     * 处理模型构造和计算数据
+     * 更新模型输出引脚的mv值
+     */
+    public DmcResponse4PlantDto computresulteprocess(MpcModel baseModelImp, DmcResponseDto data) {
+        //处理模型计算数据
+        if (data.getData().getStep().equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_COMPUTE.getStep())) {
 
-                int p = baseModelImp.getNumOfRunnablePVPins_pp();
-                int m = baseModelImp.getNumOfRunnableMVpins_mm();
-                int v = baseModelImp.getNumOfRunnableFFpins_vv();
-                int N = baseModelImp.getTimeserise_N();
-
-                double[] predictpvArray = new double[p * N];
-                double[][] funelupAnddownArray = new double[2][p * N];
-                double[] eArray = new double[p];
-                double[] dmvArray = new double[m];
-
-                double[] dffArray = null;
-                if (v != 0) {
-                    dffArray = new double[v];
-                }
-                for (int i = 0; i < p * N; i++) {
-                    predictpvArray[i] = predictpvJson.getDouble(i);
-                    funelupAnddownArray[0][i] = funelupAnddownJson.getJSONArray(0).getDouble(i);
-                    funelupAnddownArray[1][i] = funelupAnddownJson.getJSONArray(1).getDouble(i);
-                }
-
-                for (int i = 0; i < p; i++) {
-                    eArray[i] = eJson.getDouble(i);
-                }
-
-                for (int i = 0; i < m; i++) {
-                    dmvArray[i] = dmvJson.getDouble(i);
-                }
-                for (int i = 0; i < v; ++i) {
-                    dffArray[i] = dffJson.getDouble(i);
-                }
-
-                updateModleComputeResult(baseModelImp, predictpvArray, funelupAnddownArray, dmvArray, eArray, dffArray);
-
-
-                JSONArray mvJson = modlestatus.getJSONArray("mv");
-                int index = 0;
-                List<MpcModelProperty> runablemv = getRunablePins(baseModelImp.getCategoryMVmodletag(), baseModelImp.getMaskisRunnableMVMatrix());
-                for (MpcModelProperty mpcModleProperty : runablemv) {
-                    String outputpinname = mpcModleProperty.getModlePinName();
-                    double outvalue = mvJson.getDouble(index);
-                    index++;
-                    for (BaseModelProperty modleProperty : baseModelImp.getPropertyImpList()) {
-                        //查询输出引脚并赋值mv
-                        MpcModelProperty outputpin = (MpcModelProperty) modleProperty;
-                        if (outputpin.getPindir().equals(AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_OUTPUT.getCode())) {
-                            if (outputpinname.equals(outputpin.getModlePinName())) {
-                                outputpin.setValue(outvalue);
-                            }
-                        }
-
-                    }
-                }
-
-                return mpcComputeResponse(baseModelImp, data.getString("msg"), data.getInteger("status"));
+            // 更新模型上下文
+            Object modelStatus = modelCacheService.getModelStatus(baseModelImp.getModleId());
+            if (!ObjectUtils.isEmpty(modelStatus)) {
+                ModleStatusCache cache = (ModleStatusCache) modelStatus;
+                cache.setAlgorithmContext(data.getAlgorithmContext());
+                modelCacheService.updateModelStatus(baseModelImp.getModleId(), modelStatus);
             }
+
+
+//                JSONObject modlestatus = data.getJSONObject("data");//JSONObject.parseObject(data);
+            JSONArray predictpvJson = data.getData().getPredict();//
+            JSONArray eJson = data.getData().getE();//
+            JSONArray funelupAnddownJson = data.getData().getFunelupAnddown();//
+            JSONArray dmvJson = data.getData().getDmv();//
+            JSONArray dffJson = data.getData().getDff();//
+
+            int p = baseModelImp.getNumOfRunnablePVPins_pp();
+            int m = baseModelImp.getNumOfRunnableMVpins_mm();
+            int v = baseModelImp.getNumOfRunnableFFpins_vv();
+            int N = baseModelImp.getTimeserise_N();
+
+            double[] predictpvArray = new double[p * N];
+            double[][] funelupAnddownArray = new double[2][p * N];
+            double[] eArray = new double[p];
+            double[] dmvArray = new double[m];
+
+            double[] dffArray = null;
+            if (v != 0) {
+                dffArray = new double[v];
+            }
+            for (int i = 0; i < p * N; i++) {
+                predictpvArray[i] = predictpvJson.getDouble(i);
+                funelupAnddownArray[0][i] = funelupAnddownJson.getJSONArray(0).getDouble(i);
+                funelupAnddownArray[1][i] = funelupAnddownJson.getJSONArray(1).getDouble(i);
+            }
+
+            for (int i = 0; i < p; i++) {
+                eArray[i] = eJson.getDouble(i);
+            }
+
+            for (int i = 0; i < m; i++) {
+                dmvArray[i] = dmvJson.getDouble(i);
+            }
+            for (int i = 0; i < v; ++i) {
+                dffArray[i] = dffJson.getDouble(i);
+            }
+
+            updateModleComputeResult(baseModelImp, predictpvArray, funelupAnddownArray, dmvArray, eArray, dffArray);
+
+
+            JSONArray mvJson = data.getData().getMv();
+            int index = 0;
+            List<MpcModelProperty> runablemv = getRunablePins(baseModelImp.getCategoryMVmodletag(), baseModelImp.getMaskisRunnableMVMatrix());
+            for (MpcModelProperty mpcModleProperty : runablemv) {
+                String outputpinname = mpcModleProperty.getModlePinName();
+                double outvalue = mvJson.getDouble(index);
+                index++;
+                for (BaseModelProperty modleProperty : baseModelImp.getPropertyImpList()) {
+                    //查询输出引脚并赋值mv
+                    MpcModelProperty outputpin = (MpcModelProperty) modleProperty;
+                    if (outputpin.getPindir().equals(AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_OUTPUT.getCode())) {
+                        if (outputpinname.equals(outputpin.getModlePinName())) {
+                            outputpin.setValue(outvalue);
+                        }
+                    }
+
+                }
+            }
+
+            return mpcComputeResponse(baseModelImp, data.getMessage(), data.getStatus());
+        }
 
         return mpcErrorResponse("无法匹配mpc计算的阶段");
     }
@@ -373,7 +386,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
     /**
      * 模型短路，直接将输入的mv赋值给输出的mv
      */
-    private DmcResponseDto modleshortcircuit(MpcModel baseModelImp) {
+    private DmcResponse4PlantDto modleshortcircuit(MpcModel baseModelImp) {
 
         List<MpcModelProperty> modlePropertyList = new ArrayList<>();
         //类型转换
@@ -398,18 +411,18 @@ public class MpcModelHandle implements Handle, BoundCondition {
         return mpcComputeResponse(baseModelImp, "模型短路", HttpStatus.OK.value());
     }
 
-    private DmcResponseDto mpcErrorResponse(String msg) {
-        DmcResponseDto dmcResponseDto = new DmcResponseDto();
-        dmcResponseDto.setMessage(msg);
-        dmcResponseDto.setStatus(123456);
-        return dmcResponseDto;
+    private DmcResponse4PlantDto mpcErrorResponse(String msg) {
+        DmcResponse4PlantDto dmcResponse4PlantDto = new DmcResponse4PlantDto();
+        dmcResponse4PlantDto.setMessage(msg);
+        dmcResponse4PlantDto.setStatus(123456);
+        return dmcResponse4PlantDto;
     }
 
 
-    private DmcResponseDto mpcComputeResponse(MpcModel mpcModel, String msg, int status) {
+    private DmcResponse4PlantDto mpcComputeResponse(MpcModel mpcModel, String msg, int status) {
 
-        DmcResponseDto dmcRespon = new DmcResponseDto();
-        DmcDataDto dmcdata = new DmcDataDto();
+        DmcResponse4PlantDto dmcRespon = new DmcResponse4PlantDto();
+        DmcData4PlantDto dmcdata = new DmcData4PlantDto();
         dmcRespon.setMessage(msg);
 
         dmcRespon.setStatus(status);
@@ -434,12 +447,12 @@ public class MpcModelHandle implements Handle, BoundCondition {
         }
 
 
-        List<DmcPvPredictDataDto> pvpredicts = new ArrayList<>();
+        List<DmcPvPredictData4PlantDto> pvpredicts = new ArrayList<>();
 
         List<MpcModelProperty> runnanlepvs = getRunablePins(mpcModel.getCategoryPVmodletag(), mpcModel.getMaskisRunnablePVMatrix());
 
         for (int index = 0; index < runnanlepvs.size(); index++) {
-            DmcPvPredictDataDto pvpredict = new DmcPvPredictDataDto();
+            DmcPvPredictData4PlantDto pvpredict = new DmcPvPredictData4PlantDto();
             pvpredicts.add(pvpredict);
             pvpredict.setPvpinname(runnanlepvs.get(index).getModlePinName());
             pvpredict.setPredictorder(mpcModel.getBackPVPrediction()[index]);
@@ -451,9 +464,9 @@ public class MpcModelHandle implements Handle, BoundCondition {
 
 
         List<MpcModelProperty> runnanlemvs = getRunablePins(mpcModel.getCategoryMVmodletag(), mpcModel.getMaskisRunnableMVMatrix());
-        List<DmcDmvDataDto> dmvDataList = new ArrayList<>();
+        List<DmcDmvData4PlantDto> dmvDataList = new ArrayList<>();
         for (int index = 0; index < runnanlemvs.size(); index++) {
-            DmcDmvDataDto dmvData = new DmcDmvDataDto();
+            DmcDmvData4PlantDto dmvData = new DmcDmvData4PlantDto();
             dmvData.setInputpinname(runnanlemvs.get(index).getModlePinName());
             dmvData.setValue(mpcModel.getBackrawDmv()[index]);
             dmvDataList.add(dmvData);
@@ -463,8 +476,8 @@ public class MpcModelHandle implements Handle, BoundCondition {
         return dmcRespon;
     }
 
-    private DmcResponseDto mpcBuildResponse(String msg, int status) {
-        DmcResponseDto dmcRespon = new DmcResponseDto();
+    private DmcResponse4PlantDto mpcBuildResponse(String msg, int status) {
+        DmcResponse4PlantDto dmcRespon = new DmcResponse4PlantDto();
         dmcRespon.setMessage(msg);
         dmcRespon.setStatus(status);
         return dmcRespon;
@@ -638,13 +651,13 @@ public class MpcModelHandle implements Handle, BoundCondition {
     /**
      * 调用dmc算法，并处理返回结果
      */
-    private DmcResponseDto callMpc(MpcModel mpcModel, CallBaseRequestDto callBaseRequestDto) {
+    private DmcResponse4PlantDto callMpc(MpcModel mpcModel, CallBaseRequestDto callBaseRequestDto) {
 
         String requestUrl = algorithmRouteConfig.getUrl() + algorithmRouteConfig.getDmc();
-        ResponseEntity<String> responseEntity = null;
+        ResponseEntity<DmcResponseDto> responseEntity = null;
         try {
             responseEntity = restTemplateNoCloud.postForEntity(requestUrl,
-                    JSONObject.parseObject(JSONObject.toJSONString(callBaseRequestDto)), String.class);
+                    JSONObject.parseObject(JSONObject.toJSONString(callBaseRequestDto)), DmcResponseDto.class);
 
         } catch (Exception e) {
             log.error(e.getMessage(), e);
@@ -655,20 +668,25 @@ public class MpcModelHandle implements Handle, BoundCondition {
             //接口失败
             return mpcErrorResponse("调用DMC接口失败");
         }
-        DmcResponseDto dmcResponseDto = null;
+        DmcResponse4PlantDto dmcResponse4PlantDto = null;
         try {
-            JSONObject dmcResponse = JSONObject.parseObject(responseEntity.getBody());
-            if (dmcResponse.getInteger("status").equals(HttpStatus.OK.value())) {
-                dmcResponseDto = computresulteprocess(mpcModel, dmcResponse);
+            DmcResponseDto dmcResponse = responseEntity.getBody();
+            if (dmcResponse.getStatus() == (HttpStatus.OK.value())) {
+                if (dmcResponse.getData().getStep().equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_BUILD.getStep())) {
+                    dmcResponse4PlantDto = buildresulteprocess(mpcModel, dmcResponse);
+                } else if (dmcResponse.getData().getStep().equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_COMPUTE.getStep())) {
+                    dmcResponse4PlantDto = computresulteprocess(mpcModel, dmcResponse);
+                }
+
             } else {
                 //异常状态，则去粗异常信息，进行反馈。
-                dmcResponseDto = mpcErrorResponse(dmcResponse.getString("msg"));
+                dmcResponse4PlantDto = mpcErrorResponse(dmcResponse.getMessage());
             }
         } catch (Exception e) {
             log.error(e.getMessage(), e);
             return mpcErrorResponse(e.getMessage());
         }
-        return dmcResponseDto;
+        return dmcResponse4PlantDto;
     }
 
 
