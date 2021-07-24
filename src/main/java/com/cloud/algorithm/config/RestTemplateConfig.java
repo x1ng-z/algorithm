@@ -11,6 +11,7 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -25,7 +26,6 @@ import java.net.UnknownHostException;
 @Slf4j
 @Configuration
 public class RestTemplateConfig {
-
     @Bean("nocloud")
     public RestTemplate nocloudRestTemplate() {
         HttpComponentsClientHttpRequestFactory httpRequestFactory =

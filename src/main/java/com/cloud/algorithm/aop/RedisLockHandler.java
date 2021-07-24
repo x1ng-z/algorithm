@@ -1,6 +1,6 @@
 package com.cloud.algorithm.aop;
 
-import com.cloud.algorithm.annotation.RedizDistributeLock;
+import com.cloud.algorithm.config.RedisDistributeLockConfig;
 import com.cloud.algorithm.service.KeyGenerant;
 import com.cloud.algorithm.service.redizDistributeLock.DistributeLockImp;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +29,8 @@ public class RedisLockHandler implements KeyGenerant {
     @Autowired
     private DistributeLockImp distributeLockImp;
 
+    @Autowired
+    private RedisDistributeLockConfig redisDistributeLockConfig;
 
     @Pointcut("@annotation(com.cloud.algorithm.annotation.RedizDistributeLock) && args(modelId,..)")
     public void pointCut4RedisLock(Long modelId) {
@@ -41,7 +43,7 @@ public class RedisLockHandler implements KeyGenerant {
         boolean isgetLock = false;
         try {
             log.debug("try to lock modelid=" + modelId);
-            isgetLock = distributeLockImp.tryLock(generantAlgorithmLockRedisKey(modelId), 20000, 60000, TimeUnit.MILLISECONDS);
+            isgetLock = distributeLockImp.tryLock(generantAlgorithmLockRedisKey(modelId), redisDistributeLockConfig.getWaitTime(), redisDistributeLockConfig.getLeaseTime(), TimeUnit.MILLISECONDS);
 
             if (isgetLock) {
                 log.debug("get to lock modelid=" + modelId);

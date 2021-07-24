@@ -68,7 +68,7 @@ public class Algorithm {
 
     @RequestMapping(path = "/cpython/buildrun", consumes = "application/json")
     public ResponseEntity<String> cpython(@Valid @RequestBody PythonAdapter pythonAdapter) {
-        log.debug("/dmc/buildrun" + JSON.toJSONString(pythonAdapter));
+        log.debug("/cpython/buildrun" + JSON.toJSONString(pythonAdapter));
 
         Handle handle = algorithmModelSericeImp.getMatchHandles(AlgorithmName.CUSTOMIZE_MODEL.getCode());
 
@@ -84,7 +84,7 @@ public class Algorithm {
 
     @RequestMapping(path = "/fpid/buildrun", consumes = "application/json")
     public ResponseEntity<String> fpid(@Valid @RequestBody PidModleAdapter pidModleAdapter) {
-        log.debug("/dmc/buildrun" + JSON.toJSONString(pidModleAdapter));
+        log.debug("/fpid/buildrun" + JSON.toJSONString(pidModleAdapter));
 
         Handle handle = algorithmModelSericeImp.getMatchHandles(AlgorithmName.PID_MODEL.getCode());
 

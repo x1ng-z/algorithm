@@ -1,0 +1,47 @@
+# 应用名称
+spring:
+  application:
+    name: algorithm
+  profiles:
+    active: dev
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.156.24:8848
+        namespace: 97519f2d-9c1e-4ef0-b4eb-d1cefa26269b
+      config:
+        server-addr: ${spring.cloud.nacos.discovery.server-addr}
+        namespace: ${spring.cloud.nacos.discovery.namespace}
+  redis:
+    database:
+  # Actuator Web 访问端口
+# 应用服务 WEB 访问端口
+server:
+  port: 1234
+
+xalgorithmroute:
+  url: http://127.0.0.1:8001
+
+
+
+### 设置配置中心服务端地址
+#spring.cloud.nacos.config.server-addr=127.0.0.1:8848
+#spring.cloud.nacos.config.namespace=e3a857d5-2e85-4a65-9276-94d4cc5b4c87
+#
+## Nacos 服务发现与注册配置，其中子属性 server-addr 指定 Nacos 服务器主机和端口
+#spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848
+## 注册到 nacos 的指定 namespace，默认为 public
+#spring.cloud.nacos.discovery.namespace=e3a857d5-2e85-4a65-9276-94d4cc5b4c87
+#
+
+# 设置配置中心服务端地址
+#spring.cloud.nacos.config.server-addr=192.168.10.212:8848
+# spring.cloud.nacos.config.namespace=edbcd212-18f4-4e0c-891b-406426e9874e
+#
+## Nacos 服务发现与注册配置，其中子属性 server-addr 指定 Nacos 服务器主机和端口
+#spring.cloud.nacos.discovery.server-addr=192.168.10.212:8848
+## 注册到 nacos 的指定 namespace，默认为 public
+#spring.cloud.nacos.discovery.namespace=edbcd212-18f4-4e0c-891b-406426e9874e
+#
+
+

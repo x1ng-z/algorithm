@@ -3,6 +3,7 @@ package com.cloud.algorithm.config;
 import lombok.Data;
 import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.context.annotation.Configuration;
 
 /**
@@ -13,10 +14,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @Data
 @ConfigurationProperties(prefix = "redisdlock")
+@RefreshScope
 public class RedisDistributeLockConfig {
-
     private long waitTime = 20000;
     private long leaseTime = 60000;
-
-
 }

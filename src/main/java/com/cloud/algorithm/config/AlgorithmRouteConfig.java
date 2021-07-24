@@ -20,17 +20,17 @@ public class AlgorithmRouteConfig {
     private String url;
 
 
-    private String python = "/customize/";
+    private String python = "/customize";
 
     /**
      * F-PID运算接口
      */
-    private String pid = "/pid/";
+    private String pid = "/pid";
 
     /**
      * DMC运算接口
      */
-    private String dmc = "/dmc/";
+    private String dmc = "/dmc";
 
 
 

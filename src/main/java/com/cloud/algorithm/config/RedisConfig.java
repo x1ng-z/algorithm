@@ -31,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 public class RedisConfig {
 
     @Bean
+    @Autowired
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory redisConnectionFactory) {
         RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
         redisTemplate.setConnectionFactory(redisConnectionFactory);
