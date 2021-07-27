@@ -1104,10 +1104,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
      */
     private void initRunnableMatrixAndBaseMapMatrix(MpcModel mpcModel) {
         for (int indexpv = 0; indexpv < mpcModel.getCategoryPVmodletag().size(); ++indexpv) {
-            /**pv引脚启用，并且参与本次控制*/
-            if (isThisTimeRunnablePin(mpcModel.getCategoryPVmodletag().get(indexpv))) {
-                mpcModel.getMaskisRunnablePVMatrix()[indexpv] = 1;
-            }
+
 
             /**1\marker total pvusemv
              * 2\marker participate mv
@@ -1116,10 +1113,18 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 ResponTimeSerise ismapping = isPVMappingMV(mpcModel, mpcModel.getCategoryPVmodletag().get(indexpv).getModlePinName(), mpcModel.getCategoryMVmodletag().get(indexmv).getModlePinName());
                 mpcModel.getMaskBaseMapPvUseMvMatrix()[indexpv][indexmv] = (null != ismapping ? 1 : 0);
                 mpcModel.getMaskBaseMapPvEffectMvMatrix()[indexpv][indexmv] = (null != ismapping ? ismapping.getEffectRatio() : 0f);
+
+
+                /**pv引脚启用，并且参与本次控制*/
+                if ((null != ismapping)&&isThisTimeRunnablePin(mpcModel.getCategoryPVmodletag().get(indexpv))) {
+                    mpcModel.getMaskisRunnablePVMatrix()[indexpv] = 1;
+                }
+
                 /**1是否有映射关系、2、pv是否启用 3mv是否启用*/
                 if ((null != ismapping) && isThisTimeRunnablePin(mpcModel.getCategoryPVmodletag().get(indexpv)) && isThisTimeRunnablePin(mpcModel.getCategoryMVmodletag().get(indexmv))) {
                     mpcModel.getMaskisRunnableMVMatrix()[indexmv] = 1;
                 }
+
             }
 
             /**1\marker total pvuseff
