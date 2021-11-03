@@ -55,6 +55,7 @@ public class RedisLockHandler implements KeyGenerant {
 
         } catch (InterruptedException e) {
             log.error(e.getMessage(), e);
+            throw new RuntimeException(String.format("model run error:%s",e.getMessage()));
         } finally {
             if (isgetLock) {
                 try {
@@ -65,6 +66,6 @@ public class RedisLockHandler implements KeyGenerant {
             }
 
         }
-        return null;
+//        return null;
     }
 }
