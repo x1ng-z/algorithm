@@ -28,6 +28,7 @@ public class ModelCacheService implements KeyGenerant {
      * @param modelid 模型id
      */
     public void deletModelStatus(Long modelid) {
+        log.info("deletModelStatus.id={}",modelid);
         redizServiceImp.delete(generantAlgorithmStatusRedisKey(modelid));
     }
 

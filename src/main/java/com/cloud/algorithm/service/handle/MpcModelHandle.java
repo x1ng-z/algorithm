@@ -216,10 +216,13 @@ public class MpcModelHandle implements Handle, BoundCondition {
             if (autopin.getValue() == 0) {
                 //把输入的mv直接丢给输出mv，短路模型
                 //模型短路;
+                ((ModleStatusCache) modleStatusCache).setModelAuto(false);
+                modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
                 return modleshortcircuit((MpcModel) baseModelImp);
             } else if ((autopin.getValue() != 0) && (!((ModleStatusCache) modleStatusCache).getModelAuto())) {
                 //更新模型投运状态
                 ((ModleStatusCache) modleStatusCache).setModelAuto(true);
+                ((ModleStatusCache) modleStatusCache).setModelbuild(false);
                 modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
             }
 
@@ -232,11 +235,11 @@ public class MpcModelHandle implements Handle, BoundCondition {
         if (!ObjectUtils.isEmpty(modleStatusCache)) {
             ModleStatusCache modleStCache = (ModleStatusCache) modleStatusCache;
 
-            //模型没有构建，进行构造调用
+            //重建模型可能会有
             if (modleBuild((MpcModel) baseModelImp)) {
                 //创建构造数据并调用
                 if (!modleStCache.getModelbuild()) {
-                    CallBaseRequestDto mpcBuildRequest = mpcBuildRequest((MpcModel) baseModelImp, modleStCache.getAlgorithmContext());
+                    CallBaseRequestDto mpcBuildRequest = mpcBuildRequest((MpcModel) baseModelImp, null/*modleStCache.getAlgorithmContext()*/);
                     DmcResponse4PlantDto dmcResponse4PlantDto = callMpc((MpcModel) baseModelImp, mpcBuildRequest);
                     if (dmcResponse4PlantDto.getStatus() != HttpStatus.OK.value()) {
                         return dmcResponse4PlantDto;

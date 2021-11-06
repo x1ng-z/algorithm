@@ -155,6 +155,7 @@ public class CustomizeModelHandle implements Handle {
         Object modleStatusCache = modelCacheService.getModelStatus(baseModelImp.getModleId());
 
         if (ObjectUtils.isEmpty(modleStatusCache)) {
+            log.info("get a empty key-value={}",baseModelImp.getModleId());
             //初始化并更新模型缓存
             modleStatusCache = ModleStatusCache.builder()
                     .modleId(baseModelImp.getModleId())
