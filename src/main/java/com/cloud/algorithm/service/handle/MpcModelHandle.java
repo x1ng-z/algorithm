@@ -47,9 +47,9 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class MpcModelHandle implements Handle, BoundCondition {
-    private static Pattern pvpattern = Pattern.compile("(^pv(\\d+)$)");
-    private static Pattern ffpattern = Pattern.compile("(^ff(\\d+)$)");
-    private static Pattern mvpattern = Pattern.compile("(^mv(\\d+)$)");
+    private static final Pattern pvpattern = Pattern.compile("(^pv(\\d+)$)");
+    private static final Pattern ffpattern = Pattern.compile("(^ff(\\d+)$)");
+    private static final Pattern mvpattern = Pattern.compile("(^mv(\\d+)$)");
 
 
     @Autowired
@@ -116,13 +116,9 @@ public class MpcModelHandle implements Handle, BoundCondition {
             } else {
                 Instant runClock = ((ModleStatusCache) modelStatus).getPinClock().get(code);
                 if (!ObjectUtils.isEmpty(runClock)) {
-                    if (Instant.now().isAfter(runClock)) {
-                        //已经保持到了正常时间点，可以切入控制
-                        return true;
-                    } else {
-                        //还未达到
-                        return false;
-                    }
+                    //已经保持到了正常时间点，可以切入控制
+                    //还未达到
+                    return Instant.now().isAfter(runClock);
                 } else {
                     return false;
                 }
@@ -173,9 +169,9 @@ public class MpcModelHandle implements Handle, BoundCondition {
     public BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp) {
 
         Object modleStatusCache = modelCacheService.getModelStatus(baseModelImp.getModleId());
-
+        //模型缓存为空，则创建一个缓存
         if (ObjectUtils.isEmpty(modleStatusCache)) {
-            //初始化引脚参与状态 key=pinname mv1 pv1 value=boolean 是否参与本次控制
+            //初始化引脚参与激活状态 key=pinname mv1 pv1 value=boolean 是否参与本次控制
             Map<String, Boolean> pinActiveStatus = new HashMap<>();
             if (!CollectionUtils.isEmpty(baseModelImp.getPropertyImpList())) {
                 pinActiveStatus = baseModelImp.getPropertyImpList().stream().collect(Collectors.toMap(BaseModelProperty::getModlePinName, BaseModelProperty::isThisTimeParticipate, (oldvalue, newvalue) -> newvalue));
@@ -186,6 +182,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
                     .code(baseModelImp.getModletype())
                     .algorithmContext(new JSONObject())
                     .pinActiveStatus(pinActiveStatus)
+                    .pinClock(new HashMap<>())
                     .modelAuto(true)
                     .modelbuild(false)
                     .build();
@@ -196,15 +193,16 @@ public class MpcModelHandle implements Handle, BoundCondition {
         //更新引脚参与状态
         if (!CollectionUtils.isEmpty(baseModelImp.getPropertyImpList())) {
             Object finalModleStatusCache = modleStatusCache;
-            baseModelImp.getPropertyImpList().stream().filter(p -> {
+            //这里为什么只是更新输出引脚的激活状态
+            baseModelImp.getPropertyImpList().stream()/*.filter(p -> {
                 if (p.getPindir().equals(AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_OUTPUT.getCode())) {
                     return true;
                 } else {
                     return false;
                 }
-            }).forEach(p -> {
+            })*/.forEach(p -> {
                 Boolean activeStatus = ((ModleStatusCache) finalModleStatusCache).getPinActiveStatus().get(p.getModlePinName());
-                p.setThisTimeParticipate(activeStatus == null ? true : activeStatus);
+                p.setThisTimeParticipate(activeStatus == null || activeStatus);
             });
         }
 
@@ -239,6 +237,8 @@ public class MpcModelHandle implements Handle, BoundCondition {
             if (modleBuild((MpcModel) baseModelImp)) {
                 //创建构造数据并调用
                 if (!modleStCache.getModelbuild()) {
+                    //内部进行会进行缓存数据交换，所以再用到缓存信息，需要重新获取
+                    log.debug("build python modle id={}",baseModelImp.getModleId());
                     CallBaseRequestDto mpcBuildRequest = mpcBuildRequest((MpcModel) baseModelImp, null/*modleStCache.getAlgorithmContext()*/);
                     DmcResponse4PlantDto dmcResponse4PlantDto = callMpc((MpcModel) baseModelImp, mpcBuildRequest);
                     if (dmcResponse4PlantDto.getStatus() != HttpStatus.OK.value()) {
@@ -247,6 +247,10 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 }
 
             } else {
+                if((((MpcModel) baseModelImp).getNumOfRunnablePVPins_pp()==0)||(((MpcModel) baseModelImp).getNumOfRunnableMVpins_mm()==0)){
+                    //如果是因为没有可用的pv和mv构建失败
+                    return  modleshortcircuit((MpcModel) baseModelImp);
+                }
                 return mpcBuildResponse("mpc模型构建失败，可能是没有可用的pv和mv，或者参数设置存在问题", 123456);
             }
 
@@ -444,7 +448,21 @@ public class MpcModelHandle implements Handle, BoundCondition {
             if (outputpin.getPindir().equals(AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_OUTPUT.getCode())) {
                 PinDataDto pinData = new PinDataDto();
                 pinData.setPinname(outputpin.getModlePinName());
-                pinData.setValue(outputpin.getValue() == null ? 0 : outputpin.getValue());
+                //如果为null，那么说明该mv引脚是已经贝切除了，那么直接按照输入的mv来进行设置
+                if (outputpin.getValue() == null) {
+                    Map<String, BaseModelProperty> inputBasePropertMapp = mpcModel.getPropertyImpList().stream().filter(
+                            mv -> {
+                                return mv.getPindir().equals(AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_INPUT.getCode());
+                            }).collect(Collectors.toMap(BaseModelProperty::getModlePinName, p -> p, (o, n) -> n));
+                    if (inputBasePropertMapp.containsKey(outputpin.getModlePinName())) {
+                        pinData.setValue(inputBasePropertMapp.get(outputpin.getModlePinName()).getValue());
+                    }else{
+                        pinData.setValue(0);
+                    }
+                }else{
+                    pinData.setValue(outputpin.getValue());
+                }
+
                 mvDataList.add(pinData);
             }
         }
@@ -474,6 +492,20 @@ public class MpcModelHandle implements Handle, BoundCondition {
             dmvData.setValue(mpcModel.getBackrawDmv()[index]);
             dmvDataList.add(dmvData);
         }
+        //将其失效的mv的dmv值放入
+        mpcModel.getCategoryMVmodletag().stream().filter(mv -> {
+            //是否和任意一个参与运行的引脚相等
+            boolean in_res = runnanlemvs.stream().anyMatch(run_mv -> {
+                return run_mv.getModlePinName().equals(mv.getModlePinName());
+            });
+            return !in_res;
+        }).forEach(mv -> {
+            //筛选得到不参与运行mv,设置起dmv为0
+            DmcDmvData4PlantDto dmvData = new DmcDmvData4PlantDto();
+            dmvData.setInputpinname(mv.getModlePinName());
+            dmvData.setValue(0.0);
+            dmvDataList.add(dmvData);
+        });
         dmcdata.setDmv(dmvDataList);
 
         return dmcRespon;
@@ -767,7 +799,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
      */
     private boolean checkmodlepinisinLimit(Long modelId, List<BaseModelProperty> pins, Integer contrltime) {
         /**引脚类型判断，筛选出pv或者ff引脚，这里限制了pv和ff这个范围，因为如果是mv也是有上下限的，二mv是不需要通过这个进行设置引脚运行还是停止*/
-        boolean ishavebreakOrRestorepin = false;
+        boolean ishavebreakOrRestorepin = false;//是否需要重新更新模型的标志位
         for (BaseModelProperty pin : pins) {
             MpcModelProperty mpcModleProperty = (MpcModelProperty) pin;
             boolean ispvpin = (mpcModleProperty.getPintype() != null) && (mpcModleProperty.getPintype().equals(AlgorithmModelProperty.MODEL_PROPERTY_PV.getCode()));
@@ -780,7 +812,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 if (isBreakLimit(mpcModleProperty)) {
                     /**突破边界*/
                     if (mpcModleProperty.isThisTimeParticipate()) {
-                        /*参与控制了，停止*/
+                        /*参与控制了，设置该点位本次参与，停止*/
                         mpcModleProperty.setThisTimeParticipate(false);
                         ishavebreakOrRestorepin = true;//越界了
                         log.info(mpcModleProperty.getModlePinName() + " is broke limit");
@@ -789,52 +821,68 @@ public class MpcModelHandle implements Handle, BoundCondition {
                         if (!ObjectUtils.isEmpty(modelStatus)) {
                             ModleStatusCache modleStatusCache = (ModleStatusCache) modelStatus;
                             modleStatusCache.getPinActiveStatus().put(mpcModleProperty.getModlePinName(), false);
+                            //越界重置clock
+                            if(CollectionUtils.isEmpty(modleStatusCache.getPinClock())){
+                                modleStatusCache.getPinClock().remove(mpcModleProperty.getModlePinName());
+                            }
                             modelCacheService.updateModelStatus(modelId, modleStatusCache);
                         }
 
                     }
                 } else {
                     /**在边界内*/
+                    //获代操作的缓存信息
                     Object modelStatus = modelCacheService.getModelStatus(modelId);
-                    if (mpcModleProperty.isThisTimeParticipate()) {
+                    /*已经在在边界内了，如果之前不参与控制了,检查下是否闹铃时间到了*/
+                    if (!mpcModleProperty.isThisTimeParticipate()) {
+                        //判断是否存在闹铃，如果闹铃存，那么检查下闹铃是否时间到了，如果闹铃不存在那么设置下闹铃
+
                         /*参与控制*/
                         if (!ObjectUtils.isEmpty(modelStatus)) {
+
                             ModleStatusCache modleStatusCache = (ModleStatusCache) modelStatus;
-                            if (null != modleStatusCache.getPinClock()) {
+                            /*检查下是否存在闹铃*/
+                            if (null != modleStatusCache.getPinClock()&&modleStatusCache.getPinClock().containsKey(mpcModleProperty.getModlePinName())) {
                                 /*闹铃时间到了吗*/
                                 if (isclockAlarm(modelId, mpcModleProperty.getModlePinName())) {
                                     //恢复了
                                     ishavebreakOrRestorepin = true;
                                     //清除闹铃
-                                    clearRunClock(modelId, mpcModleProperty.getModlePinName());
-                                }
-                            }
-                        }
-
-                    } else {
-                        /*没参与控制,更新引脚状态,刷新闹钟*/
-                        mpcModleProperty.setThisTimeParticipate(true);
-                        //更新下引脚缓存
-                        if (!ObjectUtils.isEmpty(modelStatus)) {
-                            ModleStatusCache modleStatusCache = (ModleStatusCache) modelStatus;
-                            if (!CollectionUtils.isEmpty(modleStatusCache.getPinActiveStatus())) {
-
-                                //更新引脚状态
-                                modleStatusCache.getPinActiveStatus().put(mpcModleProperty.getModlePinName(), true);
-
+                                    //clearRunClock(modelId, mpcModleProperty.getModlePinName());
+                                    if(!CollectionUtils.isEmpty(modleStatusCache.getPinClock())){
+                                        modleStatusCache.getPinClock().remove(mpcModleProperty.getModlePinName());
+                                    }
+                                    //设置引脚本次参与
+                                    mpcModleProperty.setThisTimeParticipate(true);
+                                    //更新缓存
+                                    modleStatusCache.getPinActiveStatus().put(mpcModleProperty.getModlePinName(), true);
+                                    modelCacheService.updateModelStatus(modelId, modleStatusCache);
+                                    log.debug("id={},remove a  clock", modelId);
+                                }//没到，那么直接不进行处理；
+                            } else {
+                                /*没有闹铃，那么创建一个闹铃*/
                                 int checktime = 10;
                                 /*如果模型的输出周期为null/0，则直接设置引脚保持在置信区间为10s*/
                                 if (contrltime != null && contrltime != 0) {
                                     checktime = 3 * contrltime;
                                 }
-
                                 //刷新闹钟
+                                if (null == modleStatusCache.getPinClock()) {
+                                    modleStatusCache.setPinClock(new HashMap<>());
+                                }
                                 modleStatusCache.getPinClock().put(mpcModleProperty.getModlePinName(), Instant.now().plusSeconds(checktime));
-
+                                //更新闹铃的时间的缓存
                                 modelCacheService.updateModelStatus(modelId, modleStatusCache);
+                                log.debug("id={},set a new clock", modelId);
                             }
-                        }
 
+
+                        } else {
+                            /*如果缓存找不到了，直接引脚可以参与本次控制*/
+                            ishavebreakOrRestorepin = true;
+                            //设置引脚本次参与
+                            mpcModleProperty.setThisTimeParticipate(true);
+                        }
 
                     }
 
@@ -1119,7 +1167,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
 
 
                 /**pv引脚启用，并且参与本次控制*/
-                if ((null != ismapping)&&isThisTimeRunnablePin(mpcModel.getCategoryPVmodletag().get(indexpv))) {
+                if ((null != ismapping) && isThisTimeRunnablePin(mpcModel.getCategoryPVmodletag().get(indexpv))) {
                     mpcModel.getMaskisRunnablePVMatrix()[indexpv] = 1;
                 }
 
@@ -1148,10 +1196,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
      */
     private boolean isThisTimeRunnablePin(MpcModelProperty pin) {
         /**启用，并且本次参与控制*/
-        if ((1 == pin.getPinEnable() && (pin.isThisTimeParticipate()))) {
-            return true;
-        }
-        return false;
+        return 1 == pin.getPinEnable() && (pin.isThisTimeParticipate());
     }
 
 
@@ -1430,6 +1475,8 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 pvuppinmpcModleProperty.setOpcTagName("");
                 pvuppinmpcModleProperty.setResource(pvup_resource);
                 mpc.getPropertyImpList().add(pvuppinmpcModleProperty);
+
+                pvpinmpcModleProperty.setUpLmt(pvuppinmpcModleProperty);
             }
 
 
@@ -1443,6 +1490,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 pvdownpinmpcModleProperty.setOpcTagName("");//spmodleOpcTag
                 pvdownpinmpcModleProperty.setModleOpcTag("");
 
+
                 JSONObject pvdown_resource = new JSONObject();
                 pvdown_resource.put("resource", AlgorithmValueFrom.ALGORITHM_VALUE_FROM_CONSTANT.getCode());
                 pvdown_resource.put("value", pvparam.getPvdownpinvalue());
@@ -1450,6 +1498,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 pvdownpinmpcModleProperty.setOpcTagName("");
                 mpc.getPropertyImpList().add(pvdownpinmpcModleProperty);
 
+                pvpinmpcModleProperty.setDownLmt(pvdownpinmpcModleProperty);
             }
 
 
@@ -1584,11 +1633,14 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 ffuppinmpcModleProperty.setModlepropertyclazz(AlgorithmModelPropertyClazz.MODEL_PROPERTY_CLAZZ_MPC.getCode());
                 ffuppinmpcModleProperty.setOpcTagName("");//spmodleOpcTag
                 ffuppinmpcModleProperty.setModleOpcTag("");
+
                 JSONObject ffupresource = new JSONObject();
                 ffupresource.put("resource", AlgorithmValueFrom.ALGORITHM_VALUE_FROM_CONSTANT.getCode());
                 ffupresource.put("value", ffparam.getFfuppinvalue());
                 ffuppinmpcModleProperty.setResource(ffupresource);
                 mpc.getPropertyImpList().add(ffuppinmpcModleProperty);
+
+                ffpinmpcModleProperty.setUpLmt(ffuppinmpcModleProperty);
 
             }
 
@@ -1601,11 +1653,14 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 ffdownpinmpcModleProperty.setModlepropertyclazz(AlgorithmModelPropertyClazz.MODEL_PROPERTY_CLAZZ_MPC.getCode());
                 ffdownpinmpcModleProperty.setOpcTagName("");//spmodleOpcTag
                 ffdownpinmpcModleProperty.setModleOpcTag("");
+
                 JSONObject ffdownresource = new JSONObject();
                 ffdownresource.put("resource", AlgorithmValueFrom.ALGORITHM_VALUE_FROM_CONSTANT.getCode());
                 ffdownresource.put("value", ffparam.getFfdownpinvalue());
                 ffdownpinmpcModleProperty.setResource(ffdownresource);
                 mpc.getPropertyImpList().add(ffdownpinmpcModleProperty);
+
+                ffpinmpcModleProperty.setDownLmt(ffdownpinmpcModleProperty);
             }
 
 
