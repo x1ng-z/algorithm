@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 @Aspect
 @Order(Ordered.LOWEST_PRECEDENCE)
 @Slf4j
-public class RedisLockHandler implements KeyGenerant {
+public class RedisLockAop implements KeyGenerant {
 
     @Autowired
     private DistributeLockImp distributeLockImp;

@@ -1,7 +1,7 @@
 package com.cloud.algorithm.service;
 
 import com.cloud.algorithm.model.BaseModelImp;
-import com.cloud.algorithm.model.bean.cache.ModleStatusCache;
+import com.cloud.algorithm.model.bean.cache.BaseModleStatusCache;
 import com.cloud.algorithm.model.bean.modelproperty.BaseModelProperty;
 import com.cloud.algorithm.model.bean.modelproperty.MpcModelProperty;
 import com.cloud.algorithm.model.dto.BaseModelResponseDto;
@@ -31,28 +31,28 @@ public interface Handle {
     /**
      * 模块计算处理
      * */
-    BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp);
+    BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp, BaseModleStatusCache baseModleStatusCache);
 
     /**
      * 模块初始化处理
      * */
-    void init();
+   default void init(){};
 
     /**
      * 模型销毁
      * */
-    void destory();
+    default void destory(){};
 
 
     /**模型运行
      * */
-    public BaseModelResponseDto run(BaseModelImp modle);
+    public BaseModelResponseDto run(BaseModelImp modle,BaseModleStatusCache baseModleStatusCache);
 
     /**
      * model stop
      * @param modelId model id
      * */
-    public void stop(Long modelId);
+     default public void stop(Long modelId){}
 
 
     BaseModelImp convertModel(Adapter adapter);

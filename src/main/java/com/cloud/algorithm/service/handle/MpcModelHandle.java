@@ -7,7 +7,8 @@ import com.cloud.algorithm.config.MpcConfig;
 import com.cloud.algorithm.constant.*;
 import com.cloud.algorithm.model.BaseModelImp;
 import com.cloud.algorithm.model.bean.ResponTimeSerise;
-import com.cloud.algorithm.model.bean.cache.ModleStatusCache;
+import com.cloud.algorithm.model.bean.cache.BaseModleStatusCache;
+import com.cloud.algorithm.model.bean.cache.MpcModelStatusCache;
 import com.cloud.algorithm.model.bean.controlmodel.MpcModel;
 import com.cloud.algorithm.model.bean.modelproperty.BaseModelProperty;
 import com.cloud.algorithm.model.bean.modelproperty.BoundModelPropery;
@@ -53,9 +54,6 @@ public class MpcModelHandle implements Handle, BoundCondition {
 
 
     @Autowired
-    private ModelCacheService modelCacheService;
-
-    @Autowired
     private AlgorithmRouteConfig algorithmRouteConfig;
 
     @Autowired
@@ -73,20 +71,15 @@ public class MpcModelHandle implements Handle, BoundCondition {
     }
 
     @Override
-    public BaseModelResponseDto run(BaseModelImp modle) {
+    public BaseModelResponseDto run(BaseModelImp modle,BaseModleStatusCache baseModleStatusCache/*在切面中会进行注入*/) {
         MpcModel mpcModel = (MpcModel) modle;
         mpcModel.setTotalPv(mpcConfig.getNumPv());
         mpcModel.setTotalMv(mpcConfig.getNumMv());
         mpcModel.setTotalFf(mpcConfig.getMumFf());
         inprocess(modle);
-        return docomputeprocess(modle);
+        return docomputeprocess(modle, baseModleStatusCache);
     }
 
-
-    @Override
-    public void stop(Long modelId) {
-        modelCacheService.deletModelStatus(modelId);
-    }
 
 
     @Override
@@ -99,28 +92,28 @@ public class MpcModelHandle implements Handle, BoundCondition {
 
 
     /**
-     * 判断闹铃是否过期（引脚进入置信区间时间是否足够长）
+     * 判断闹铃是否过期（引脚进入置信区间时间是否足够长）,默认不存在也为过期
      *
+     * @param modleStatusCache
      * @param modelId
-     * @param code    cv1 pv1 mv1
+     * @param code             cv1 pv1 mv1
      * @return true 存在闹铃并且已经过期，否则false
      */
     @Override
-    public boolean isclockAlarm(Long modelId, String code) {
-        Object modelStatus = modelCacheService.getModelStatus(modelId);
-        if (ObjectUtils.isEmpty(modelStatus)) {
-            return false;
+    public boolean isclockAlarm(MpcModelStatusCache modleStatusCache, Long modelId, String code) {
+        if (ObjectUtils.isEmpty(modleStatusCache)) {
+            return true;
         } else {
-            if (CollectionUtils.isEmpty(((ModleStatusCache) modelStatus).getPinClock())) {
-                return false;
+            if (CollectionUtils.isEmpty(modleStatusCache.getPinClock())) {
+                return true;
             } else {
-                Instant runClock = ((ModleStatusCache) modelStatus).getPinClock().get(code);
+                Instant runClock = modleStatusCache.getPinClock().get(code);
                 if (!ObjectUtils.isEmpty(runClock)) {
                     //已经保持到了正常时间点，可以切入控制
                     //还未达到
                     return Instant.now().isAfter(runClock);
                 } else {
-                    return false;
+                    return true;
                 }
             }
         }
@@ -135,16 +128,14 @@ public class MpcModelHandle implements Handle, BoundCondition {
      * @param modelId
      */
     @Override
-    public void clearRunClock(Long modelId, String code) {
-        Object modelStatus = modelCacheService.getModelStatus(modelId);
-        if (ObjectUtils.isEmpty(modelStatus)) {
+    public void clearRunClock(MpcModelStatusCache modleStatusCache, Long modelId, String code) {
+        if (ObjectUtils.isEmpty(modleStatusCache)) {
             return;
         } else {
-            if (CollectionUtils.isEmpty(((ModleStatusCache) modelStatus).getPinClock())) {
+            if (CollectionUtils.isEmpty(modleStatusCache.getPinClock())) {
                 return;
             } else {
-                ((ModleStatusCache) modelStatus).getPinClock().remove(code);
-                modelCacheService.updateModelStatus(modelId, modelStatus);
+                modleStatusCache.getPinClock().remove(code);
             }
         }
     }
@@ -166,46 +157,20 @@ public class MpcModelHandle implements Handle, BoundCondition {
 
 
     @Override
-    public BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp) {
+    public BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp, BaseModleStatusCache baseModleStatusCache) {
 
-        Object modleStatusCache = modelCacheService.getModelStatus(baseModelImp.getModleId());
-        //模型缓存为空，则创建一个缓存
-        if (ObjectUtils.isEmpty(modleStatusCache)) {
-            //初始化引脚参与激活状态 key=pinname mv1 pv1 value=boolean 是否参与本次控制
-            Map<String, Boolean> pinActiveStatus = new HashMap<>();
-            if (!CollectionUtils.isEmpty(baseModelImp.getPropertyImpList())) {
-                pinActiveStatus = baseModelImp.getPropertyImpList().stream().collect(Collectors.toMap(BaseModelProperty::getModlePinName, BaseModelProperty::isThisTimeParticipate, (oldvalue, newvalue) -> newvalue));
-            }
-            //初始化模型状态
-            modleStatusCache = ModleStatusCache.builder()
-                    .modleId(baseModelImp.getModleId())
-                    .code(baseModelImp.getModletype())
-                    .algorithmContext(new JSONObject())
-                    .pinActiveStatus(pinActiveStatus)
-                    .pinClock(new HashMap<>())
-                    .modelAuto(true)
-                    .modelbuild(false)
-                    .build();
-            //更新模型状态
-            modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
-        }
+        /**第一步先将算法运行状态获取到*/
+        BaseModleStatusCache modleStatusCache = baseModleStatusCache;
 
-        //更新引脚参与状态
+        //更新引脚参与状态，这时不进行数据更新
         if (!CollectionUtils.isEmpty(baseModelImp.getPropertyImpList())) {
             Object finalModleStatusCache = modleStatusCache;
             //这里为什么只是更新输出引脚的激活状态
-            baseModelImp.getPropertyImpList().stream()/*.filter(p -> {
-                if (p.getPindir().equals(AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_OUTPUT.getCode())) {
-                    return true;
-                } else {
-                    return false;
-                }
-            })*/.forEach(p -> {
-                Boolean activeStatus = ((ModleStatusCache) finalModleStatusCache).getPinActiveStatus().get(p.getModlePinName());
+            baseModelImp.getPropertyImpList().stream().forEach(p -> {
+                Boolean activeStatus = ((MpcModelStatusCache) finalModleStatusCache).getPinActiveStatus().get(p.getModlePinName());
                 p.setThisTimeParticipate(activeStatus == null || activeStatus);
             });
         }
-
 
         //首先判断下是否dcs打自动
         BaseModelProperty autopin = selectModelProperyByPinname(AlgorithmModelProperty.MODEL_PROPERTY_MODELAUTO.getCode(), baseModelImp.getPropertyImpList(), AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_INPUT.getCode());
@@ -214,42 +179,40 @@ public class MpcModelHandle implements Handle, BoundCondition {
             if (autopin.getValue() == 0) {
                 //把输入的mv直接丢给输出mv，短路模型
                 //模型短路;
-                ((ModleStatusCache) modleStatusCache).setModelAuto(false);
-                modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
+                ((MpcModelStatusCache) modleStatusCache).setModelAuto(false);
+                //这里短路了，直接更新状态然后进行数据返回
                 return modleshortcircuit((MpcModel) baseModelImp);
-            } else if ((autopin.getValue() != 0) && (!((ModleStatusCache) modleStatusCache).getModelAuto())) {
+            } else if ((autopin.getValue() != 0) && (!((MpcModelStatusCache) modleStatusCache).getModelAuto())) {
                 //更新模型投运状态
-                ((ModleStatusCache) modleStatusCache).setModelAuto(true);
-                ((ModleStatusCache) modleStatusCache).setModelbuild(false);
-                modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
+                ((MpcModelStatusCache) modleStatusCache).setModelAuto(true);
+                ((MpcModelStatusCache) modleStatusCache).setModelbuild(false);
             }
 
         }
 
         //检测下引脚有没有越界,有的话进行模型重新构建
-        checkmodlepinisinLimit(baseModelImp.getModleId(), baseModelImp.getPropertyImpList(), ((MpcModel) baseModelImp).getControlAPCOutCycle());
+        checkmodlepinisinLimit((MpcModelStatusCache) baseModleStatusCache, baseModelImp.getModleId(), baseModelImp.getPropertyImpList(), ((MpcModel) baseModelImp).getControlAPCOutCycle());
 
-        modleStatusCache = modelCacheService.getModelStatus(baseModelImp.getModleId());
         if (!ObjectUtils.isEmpty(modleStatusCache)) {
-            ModleStatusCache modleStCache = (ModleStatusCache) modleStatusCache;
+            MpcModelStatusCache modleStCache = (MpcModelStatusCache) modleStatusCache;
 
             //重建模型可能会有
             if (modleBuild((MpcModel) baseModelImp)) {
                 //创建构造数据并调用
                 if (!modleStCache.getModelbuild()) {
                     //内部进行会进行缓存数据交换，所以再用到缓存信息，需要重新获取
-                    log.debug("build python modle id={}",baseModelImp.getModleId());
+                    log.debug("build python modle id={}", baseModelImp.getModleId());
                     CallBaseRequestDto mpcBuildRequest = mpcBuildRequest((MpcModel) baseModelImp, null/*modleStCache.getAlgorithmContext()*/);
-                    DmcResponse4PlantDto dmcResponse4PlantDto = callMpc((MpcModel) baseModelImp, mpcBuildRequest);
+                    DmcResponse4PlantDto dmcResponse4PlantDto = callMpc(modleStCache, (MpcModel) baseModelImp, mpcBuildRequest);
                     if (dmcResponse4PlantDto.getStatus() != HttpStatus.OK.value()) {
                         return dmcResponse4PlantDto;
                     }
                 }
 
             } else {
-                if((((MpcModel) baseModelImp).getNumOfRunnablePVPins_pp()==0)||(((MpcModel) baseModelImp).getNumOfRunnableMVpins_mm()==0)){
+                if ((((MpcModel) baseModelImp).getNumOfRunnablePVPins_pp() == 0) || (((MpcModel) baseModelImp).getNumOfRunnableMVpins_mm() == 0)) {
                     //如果是因为没有可用的pv和mv构建失败
-                    return  modleshortcircuit((MpcModel) baseModelImp);
+                    return modleshortcircuit((MpcModel) baseModelImp);
                 }
                 return mpcBuildResponse("mpc模型构建失败，可能是没有可用的pv和mv，或者参数设置存在问题", 123456);
             }
@@ -261,15 +224,14 @@ public class MpcModelHandle implements Handle, BoundCondition {
 
 
         //模型已经构建，创建模型计算数据 并调用
-        modleStatusCache = modelCacheService.getModelStatus(baseModelImp.getModleId());
+//        Map jsonObject = (Map) baseModleStatusCache.getAlgorithmContext();
+//        log.debug("mdc key is present={}", Optional.ofNullable(jsonObject.get("dmc")).isPresent());
         if (!ObjectUtils.isEmpty(modleStatusCache)) {
-            CallBaseRequestDto callBaseRequestDto = mpcComputeRequest((MpcModel) baseModelImp, ((ModleStatusCache) modleStatusCache).getAlgorithmContext());
-            return callMpc((MpcModel) baseModelImp, callBaseRequestDto);
+            CallBaseRequestDto callBaseRequestDto = mpcComputeRequest((MpcModel) baseModelImp, modleStatusCache.getAlgorithmContext());
+            return callMpc((MpcModelStatusCache) modleStatusCache, (MpcModel) baseModelImp, callBaseRequestDto);
         } else {
             return mpcBuildResponse("查询不到模型缓存数据,step=compute", 123456);
         }
-
-
     }
 
 
@@ -277,17 +239,14 @@ public class MpcModelHandle implements Handle, BoundCondition {
      * 处理模型构造和计算数据
      * 更新模型输出引脚的mv值
      */
-    public DmcResponse4PlantDto buildresulteprocess(MpcModel baseModelImp, DmcResponseDto data) {
+    public DmcResponse4PlantDto buildresulteprocess(MpcModelStatusCache mpcModelStatusCache, MpcModel baseModelImp, DmcResponseDto data) {
 
         //处理模型构造数据
         if (data.getData().getStep().equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_BUILD.getStep())) {
             // 更新模型状态及上下文
-            Object modelStatus = modelCacheService.getModelStatus(baseModelImp.getModleId());
-            if (!ObjectUtils.isEmpty(modelStatus)) {
-                ModleStatusCache cache = (ModleStatusCache) modelStatus;
-                cache.setAlgorithmContext(data.getAlgorithmContext());
-                cache.setModelbuild(true);
-                modelCacheService.updateModelStatus(baseModelImp.getModleId(), modelStatus);
+            if (!ObjectUtils.isEmpty(mpcModelStatusCache)) {
+                mpcModelStatusCache.setAlgorithmContext(data.getAlgorithmContext());
+                mpcModelStatusCache.setModelbuild(true);
             }
             return mpcBuildResponse(data.getMessage(), data.getStatus());
         }
@@ -299,20 +258,15 @@ public class MpcModelHandle implements Handle, BoundCondition {
      * 处理模型构造和计算数据
      * 更新模型输出引脚的mv值
      */
-    public DmcResponse4PlantDto computresulteprocess(MpcModel baseModelImp, DmcResponseDto data) {
+    public DmcResponse4PlantDto computresulteprocess(MpcModelStatusCache mpcModelStatusCache, MpcModel baseModelImp, DmcResponseDto data) {
         //处理模型计算数据
         if (data.getData().getStep().equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_COMPUTE.getStep())) {
 
             // 更新模型上下文
-            Object modelStatus = modelCacheService.getModelStatus(baseModelImp.getModleId());
-            if (!ObjectUtils.isEmpty(modelStatus)) {
-                ModleStatusCache cache = (ModleStatusCache) modelStatus;
-                cache.setAlgorithmContext(data.getAlgorithmContext());
-                modelCacheService.updateModelStatus(baseModelImp.getModleId(), modelStatus);
+            if (!ObjectUtils.isEmpty(mpcModelStatusCache)) {
+                mpcModelStatusCache.setAlgorithmContext(data.getAlgorithmContext());
             }
 
-
-//                JSONObject modlestatus = data.getJSONObject("data");//JSONObject.parseObject(data);
             JSONArray predictpvJson = data.getData().getPredict();//
             JSONArray eJson = data.getData().getE();//
             JSONArray funelupAnddownJson = data.getData().getFunelupAnddown();//
@@ -418,6 +372,9 @@ public class MpcModelHandle implements Handle, BoundCondition {
         return mpcComputeResponse(baseModelImp, "模型短路", HttpStatus.OK.value());
     }
 
+    /**
+     * 构建mpc错误的响应
+     */
     private DmcResponse4PlantDto mpcErrorResponse(String msg) {
         DmcResponse4PlantDto dmcResponse4PlantDto = new DmcResponse4PlantDto();
         dmcResponse4PlantDto.setMessage(msg);
@@ -456,10 +413,10 @@ public class MpcModelHandle implements Handle, BoundCondition {
                             }).collect(Collectors.toMap(BaseModelProperty::getModlePinName, p -> p, (o, n) -> n));
                     if (inputBasePropertMapp.containsKey(outputpin.getModlePinName())) {
                         pinData.setValue(inputBasePropertMapp.get(outputpin.getModlePinName()).getValue());
-                    }else{
+                    } else {
                         pinData.setValue(0);
                     }
-                }else{
+                } else {
                     pinData.setValue(outputpin.getValue());
                 }
 
@@ -519,6 +476,9 @@ public class MpcModelHandle implements Handle, BoundCondition {
     }
 
 
+    /**
+     * 组装请求构建dmc模型的请求dao
+     */
     private CallBaseRequestDto mpcBuildRequest(MpcModel mpcModel, Object context) {
         JSONObject scriptinput = new JSONObject();
         /**base*/
@@ -686,7 +646,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
     /**
      * 调用dmc算法，并处理返回结果
      */
-    private DmcResponse4PlantDto callMpc(MpcModel mpcModel, CallBaseRequestDto callBaseRequestDto) {
+    private DmcResponse4PlantDto callMpc(MpcModelStatusCache mpcModelStatusCache, MpcModel mpcModel, CallBaseRequestDto callBaseRequestDto) {
 
         String requestUrl = algorithmRouteConfig.getUrl() + algorithmRouteConfig.getDmc();
         ResponseEntity<DmcResponseDto> responseEntity = null;
@@ -708,11 +668,10 @@ public class MpcModelHandle implements Handle, BoundCondition {
             DmcResponseDto dmcResponse = responseEntity.getBody();
             if (dmcResponse.getStatus() == (HttpStatus.OK.value())) {
                 if (dmcResponse.getData().getStep().equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_BUILD.getStep())) {
-                    dmcResponse4PlantDto = buildresulteprocess(mpcModel, dmcResponse);
+                    dmcResponse4PlantDto = buildresulteprocess(mpcModelStatusCache, mpcModel, dmcResponse);
                 } else if (dmcResponse.getData().getStep().equals(AlgorithmMpcModelStep.MPC_MODEL_STEP_COMPUTE.getStep())) {
-                    dmcResponse4PlantDto = computresulteprocess(mpcModel, dmcResponse);
+                    dmcResponse4PlantDto = computresulteprocess(mpcModelStatusCache, mpcModel, dmcResponse);
                 }
-
             } else {
                 //异常状态，则去粗异常信息，进行反馈。
                 dmcResponse4PlantDto = mpcErrorResponse(dmcResponse.getMessage());
@@ -796,8 +755,13 @@ public class MpcModelHandle implements Handle, BoundCondition {
      * 2运行
      * 2-1设置引脚运行,设置引脚，并设置引脚下次正真参与控制的时间
      * 更新缓存中模型状态
+     *
+     * @param modelId
+     * @param contrltime       运行周期
+     * @param pins
+     * @param modleStatusCache 算法运行状态缓存
      */
-    private boolean checkmodlepinisinLimit(Long modelId, List<BaseModelProperty> pins, Integer contrltime) {
+    private boolean checkmodlepinisinLimit(MpcModelStatusCache modleStatusCache, Long modelId, List<BaseModelProperty> pins, Integer contrltime) {
         /**引脚类型判断，筛选出pv或者ff引脚，这里限制了pv和ff这个范围，因为如果是mv也是有上下限的，二mv是不需要通过这个进行设置引脚运行还是停止*/
         boolean ishavebreakOrRestorepin = false;//是否需要重新更新模型的标志位
         for (BaseModelProperty pin : pins) {
@@ -815,55 +779,47 @@ public class MpcModelHandle implements Handle, BoundCondition {
                         /*参与控制了，设置该点位本次参与，停止*/
                         mpcModleProperty.setThisTimeParticipate(false);
                         ishavebreakOrRestorepin = true;//越界了
-                        log.info(mpcModleProperty.getModlePinName() + " is broke limit");
-                        //更新引脚参与状态
-                        Object modelStatus = modelCacheService.getModelStatus(modelId);
-                        if (!ObjectUtils.isEmpty(modelStatus)) {
-                            ModleStatusCache modleStatusCache = (ModleStatusCache) modelStatus;
+                        log.debug(mpcModleProperty.getModlePinName() + " is broke limit");
+
+                        if (!ObjectUtils.isEmpty(modleStatusCache)) {
+                            //更新引脚参与状态
                             modleStatusCache.getPinActiveStatus().put(mpcModleProperty.getModlePinName(), false);
                             //越界重置clock
-                            if(CollectionUtils.isEmpty(modleStatusCache.getPinClock())){
+                            if (!CollectionUtils.isEmpty(modleStatusCache.getPinClock())) {
                                 modleStatusCache.getPinClock().remove(mpcModleProperty.getModlePinName());
                             }
-                            modelCacheService.updateModelStatus(modelId, modleStatusCache);
                         }
 
                     }
                 } else {
                     /**在边界内*/
                     //获代操作的缓存信息
-                    Object modelStatus = modelCacheService.getModelStatus(modelId);
                     /*已经在在边界内了，如果之前不参与控制了,检查下是否闹铃时间到了*/
                     if (!mpcModleProperty.isThisTimeParticipate()) {
                         //判断是否存在闹铃，如果闹铃存，那么检查下闹铃是否时间到了，如果闹铃不存在那么设置下闹铃
-
                         /*参与控制*/
-                        if (!ObjectUtils.isEmpty(modelStatus)) {
-
-                            ModleStatusCache modleStatusCache = (ModleStatusCache) modelStatus;
+                        if (!ObjectUtils.isEmpty(modleStatusCache)) {
                             /*检查下是否存在闹铃*/
-                            if (null != modleStatusCache.getPinClock()&&modleStatusCache.getPinClock().containsKey(mpcModleProperty.getModlePinName())) {
+                            if (null != modleStatusCache.getPinClock() && modleStatusCache.getPinClock().containsKey(mpcModleProperty.getModlePinName())) {
                                 /*闹铃时间到了吗*/
-                                if (isclockAlarm(modelId, mpcModleProperty.getModlePinName())) {
+                                if (isclockAlarm(modleStatusCache, modelId, mpcModleProperty.getModlePinName())) {
                                     //恢复了
                                     ishavebreakOrRestorepin = true;
                                     //清除闹铃
-                                    //clearRunClock(modelId, mpcModleProperty.getModlePinName());
-                                    if(!CollectionUtils.isEmpty(modleStatusCache.getPinClock())){
+                                    if (!CollectionUtils.isEmpty(modleStatusCache.getPinClock())) {
                                         modleStatusCache.getPinClock().remove(mpcModleProperty.getModlePinName());
                                     }
                                     //设置引脚本次参与
                                     mpcModleProperty.setThisTimeParticipate(true);
                                     //更新缓存
                                     modleStatusCache.getPinActiveStatus().put(mpcModleProperty.getModlePinName(), true);
-                                    modelCacheService.updateModelStatus(modelId, modleStatusCache);
                                     log.debug("id={},remove a  clock", modelId);
                                 }//没到，那么直接不进行处理；
                             } else {
                                 /*没有闹铃，那么创建一个闹铃*/
-                                int checktime = 10;
+                                int checktime = 10;//sec
                                 /*如果模型的输出周期为null/0，则直接设置引脚保持在置信区间为10s*/
-                                if (contrltime != null && contrltime != 0) {
+                                if (contrltime != null && contrltime > 0) {
                                     checktime = 3 * contrltime;
                                 }
                                 //刷新闹钟
@@ -872,20 +828,17 @@ public class MpcModelHandle implements Handle, BoundCondition {
                                 }
                                 modleStatusCache.getPinClock().put(mpcModleProperty.getModlePinName(), Instant.now().plusSeconds(checktime));
                                 //更新闹铃的时间的缓存
-                                modelCacheService.updateModelStatus(modelId, modleStatusCache);
                                 log.debug("id={},set a new clock", modelId);
                             }
-
-
                         } else {
                             /*如果缓存找不到了，直接引脚可以参与本次控制*/
                             ishavebreakOrRestorepin = true;
                             //设置引脚本次参与
                             mpcModleProperty.setThisTimeParticipate(true);
+                            modleStatusCache.getPinActiveStatus().put(mpcModleProperty.getModlePinName(), true);
                         }
 
                     }
-
 
                 }
 
@@ -894,16 +847,11 @@ public class MpcModelHandle implements Handle, BoundCondition {
         }
 
         if (ishavebreakOrRestorepin) {
-            log.info("some pin break limit");
-            Object modleCache = modelCacheService.getModelStatus(modelId);
-            if (!ObjectUtils.isEmpty(modleCache)) {
-                ModleStatusCache modleStatusCache = (ModleStatusCache) modleCache;
+            log.debug("some pin break limit");
+            if (!ObjectUtils.isEmpty(modleStatusCache)) {
                 modleStatusCache.setModelbuild(false);
-                modelCacheService.updateModelStatus(modelId, modleStatusCache);
             }
-
         }
-
         return ishavebreakOrRestorepin;
     }
 
@@ -1082,7 +1030,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 MpcModelProperty pvup = mpcModel.getStringmodlePinsMap().get(AlgorithmModelProperty.MODEL_PROPERTY_PVUP.getCode() + i);
                 /**没有的话也不强制退出*/
                 if ((null == pvdown) || (null == pvup)) {
-                    log.warn("modleid=" + mpcModel.getModleId() + ",存在pv的置信区间不完整");
+                    log.debug("modleid=" + mpcModel.getModleId() + ",存在pv的置信区间不完整");
                 }
                 pvPin.setDownLmt(pvdown);//置信区间下限值位号
                 pvPin.setUpLmt(pvup);//置信区间上限值位号
@@ -1113,7 +1061,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
                 ffPin.setUpLmt(ffup);//置信区间上限值位号
                 mpcModel.getCategoryFFmodletag().add(ffPin);
                 if ((null == ffdown) || (null == ffup)) {
-                    log.warn("modleid=" + mpcModel.getModleId() + ",存在ff的置信区间不完整");
+                    log.debug("modleid=" + mpcModel.getModleId() + ",存在ff的置信区间不完整");
                 }
             }
 

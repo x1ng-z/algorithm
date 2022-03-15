@@ -1,5 +1,6 @@
 package com.cloud.algorithm.service;
 
+import com.cloud.algorithm.model.bean.cache.MpcModelStatusCache;
 import com.cloud.algorithm.model.bean.modelproperty.BaseModelProperty;
 import com.cloud.algorithm.model.bean.modelproperty.BoundModelPropery;
 import com.cloud.algorithm.model.bean.modelproperty.MpcModelProperty;
@@ -21,10 +22,10 @@ public interface BoundCondition {
      * 判断越界以后，比较计时器是否在规定时间内都保持正常，如果是将让他参与本次控制
      * @param code mv1 pv1。。。
      */
-    boolean isclockAlarm(Long modelId,String code);
+    boolean isclockAlarm(MpcModelStatusCache modleStatusCache, Long modelId, String code);
 
     /**
      * 清除计时器
      */
-    void clearRunClock(Long modelId, String code);
+    void clearRunClock(MpcModelStatusCache modleStatusCache,Long modelId, String code);
 }

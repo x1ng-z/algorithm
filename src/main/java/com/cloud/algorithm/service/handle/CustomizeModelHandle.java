@@ -7,7 +7,7 @@ import com.cloud.algorithm.constant.AlgorithmModelPropertyDir;
 import com.cloud.algorithm.constant.AlgorithmName;
 import com.cloud.algorithm.constant.AlgorithmValueFrom;
 import com.cloud.algorithm.model.BaseModelImp;
-import com.cloud.algorithm.model.bean.cache.ModleStatusCache;
+import com.cloud.algorithm.model.bean.cache.BaseModleStatusCache;
 import com.cloud.algorithm.model.bean.controlmodel.CustomizeModel;
 import com.cloud.algorithm.model.bean.modelproperty.BaseModelProperty;
 import com.cloud.algorithm.model.dto.*;
@@ -27,7 +27,6 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,9 +39,6 @@ import java.util.Map;
 @Service
 @Slf4j
 public class CustomizeModelHandle implements Handle {
-
-    @Autowired
-    private ModelCacheService modelCacheService;
 
     @Autowired
     private AlgorithmRouteConfig algorithmRouteConfig;
@@ -58,15 +54,11 @@ public class CustomizeModelHandle implements Handle {
     }
 
     @Override
-    public BaseModelResponseDto run(BaseModelImp modle) {
+    public BaseModelResponseDto run(BaseModelImp modle,BaseModleStatusCache baseModleStatusCache) {
         inprocess(modle);
-        return docomputeprocess(modle);
+        return docomputeprocess(modle, baseModleStatusCache);
     }
 
-    @Override
-    public void stop(Long modelId) {
-        modelCacheService.deletModelStatus(modelId);
-    }
 
     @Override
     public BaseModelImp convertModel(Adapter adapter) {
@@ -115,24 +107,6 @@ public class CustomizeModelHandle implements Handle {
     }
 
 
-//    /**
-//     * 通过参数名称，更新模型引脚数据
-//     * 更新引脚数据
-//     */
-//
-//    public void updatemodlevalue(CUSTOMIZEModle customizeModle) {
-//        for (Map.Entry<String, String> pythonInputParam : inputparam.entrySet()) {
-//            BaseModlePropertyImp selectmodleProperyByPinname = Tool.selectmodleProperyByPinname(pythonInputParam.getKey(), customizeModle.getPropertyImpList(), BaseModlePropertyImp.PINDIRINPUT);
-//            if (selectmodleProperyByPinname != null) {
-//                JSONObject resource = new JSONObject();
-//                resource.put("resource", ModleProperty.SOURCE_TYPE_CONSTANT);
-//                resource.put("value", pythonInputParam.getValue());
-//                selectmodleProperyByPinname.setResource(resource);
-//            }
-//        }
-//    }
-
-
     @Override
     public void inprocess(BaseModelImp baseModelImp) {
         List<BaseModelProperty> baseModelPropertyList = baseModelImp.getPropertyImpList();
@@ -149,25 +123,11 @@ public class CustomizeModelHandle implements Handle {
     }
 
     @Override
-    public BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp) {
-
-        /**获取上线文*/
-        Object modleStatusCache = modelCacheService.getModelStatus(baseModelImp.getModleId());
-
-        if (ObjectUtils.isEmpty(modleStatusCache)) {
-            log.info("get a empty key-value={}",baseModelImp.getModleId());
-            //初始化并更新模型缓存
-            modleStatusCache = ModleStatusCache.builder()
-                    .modleId(baseModelImp.getModleId())
-                    .code(baseModelImp.getModletype())
-                    .algorithmContext(new JSONObject())
-                    .build();
-            modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
-        }
+    public BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp, BaseModleStatusCache baseModleStatusCache) {
         //数据组装
-        CallBaseRequestDto callBaseRequestDto = buildRequest(baseModelImp, ((ModleStatusCache) modleStatusCache).getAlgorithmContext());
+        CallBaseRequestDto callBaseRequestDto = buildRequest(baseModelImp, baseModleStatusCache.getAlgorithmContext());
         //请求
-        return callCPython(baseModelImp, callBaseRequestDto);
+        return callCPython( baseModleStatusCache,baseModelImp, callBaseRequestDto);
     }
 
 
@@ -195,16 +155,6 @@ public class CustomizeModelHandle implements Handle {
         }
     }
 
-
-    @Override
-    public void init() {
-
-    }
-
-    @Override
-    public void destory() {
-
-    }
 
 
     private CPythonResponse4PlantDto buildResponse(String msg, int status) {
@@ -234,6 +184,9 @@ public class CustomizeModelHandle implements Handle {
         return cPythonResponse4PlantDto;
     }
 
+    /**
+     * 组装请求dao
+     * */
     private CallBaseRequestDto buildRequest(BaseModelImp baseModelImp, Object context) {
 
         JSONObject scriptinput = new JSONObject();
@@ -261,7 +214,7 @@ public class CustomizeModelHandle implements Handle {
         return dto;
     }
 
-    private CPythonResponse4PlantDto callCPython(BaseModelImp baseModelImp, CallBaseRequestDto callBaseRequestDto) {
+    private CPythonResponse4PlantDto callCPython(BaseModleStatusCache baseModleStatusCache,BaseModelImp baseModelImp, CallBaseRequestDto callBaseRequestDto) {
 
         String requestUrl = algorithmRouteConfig.getUrl() + algorithmRouteConfig.getPython();
         ResponseEntity<CPythonResponseDto> responseEntity = null;
@@ -284,11 +237,8 @@ public class CustomizeModelHandle implements Handle {
         computresulteprocess(baseModelImp, cPythonResponseDto.getData());
 
         //更新上下文
-        Object modelStatus = modelCacheService.getModelStatus(baseModelImp.getModleId());
-        if (!ObjectUtils.isEmpty(modelStatus)) {
-            ModleStatusCache modleStatusCache = (ModleStatusCache) modelStatus;
-            modleStatusCache.setAlgorithmContext(cPythonResponseDto.getAlgorithmContext());
-            modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
+        if (!ObjectUtils.isEmpty(baseModleStatusCache)) {
+            baseModleStatusCache.setAlgorithmContext(cPythonResponseDto.getAlgorithmContext());
         }
         return buildResponse(cPythonResponseDto);
 

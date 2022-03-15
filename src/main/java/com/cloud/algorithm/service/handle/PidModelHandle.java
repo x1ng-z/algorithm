@@ -4,7 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.cloud.algorithm.config.AlgorithmRouteConfig;
 import com.cloud.algorithm.constant.*;
 import com.cloud.algorithm.model.BaseModelImp;
-import com.cloud.algorithm.model.bean.cache.ModleStatusCache;
+import com.cloud.algorithm.model.bean.cache.BaseModleStatusCache;
 import com.cloud.algorithm.model.bean.controlmodel.PidModel;
 import com.cloud.algorithm.model.bean.modelproperty.BaseModelProperty;
 import com.cloud.algorithm.model.bean.modelproperty.MpcModelProperty;
@@ -37,9 +37,6 @@ import java.util.List;
 @Service
 @Slf4j
 public class PidModelHandle implements Handle {
-    @Autowired
-    private ModelCacheService modelCacheService;
-
 
     @Autowired
     private AlgorithmRouteConfig algorithmRouteConfig;
@@ -67,9 +64,7 @@ public class PidModelHandle implements Handle {
     }
 
     @Override
-    public BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp) {
-
-
+    public BaseModelResponseDto docomputeprocess(BaseModelImp baseModelImp, BaseModleStatusCache baseModleStatusCache) {
         BaseModelProperty autopin = selectModelProperyByPinname(AlgorithmModelProperty.MODEL_PROPERTY_MODELAUTO.getCode(), baseModelImp.getPropertyImpList(), AlgorithmModelPropertyDir.MODEL_PROPERTYDIR_INPUT.getCode());
         if (autopin != null) {
             if (autopin.getValue() == 0) {
@@ -78,24 +73,11 @@ public class PidModelHandle implements Handle {
             }
         }
 
-        //获取模型状态信息
-        Object modleStatusCache = modelCacheService.getModelStatus(baseModelImp.getModleId());
-
-        if (ObjectUtils.isEmpty(modleStatusCache)) {
-            //初始化模型缓存状态,并更新
-            modleStatusCache = ModleStatusCache.builder()
-                    .modleId(baseModelImp.getModleId())
-                    .code(baseModelImp.getModletype())
-                    .algorithmContext(new JSONObject())
-                    .build();
-            modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
-
-        }
         //数据组装
-        CallBaseRequestDto callBaseRequestDto = buildRequest(baseModelImp, ((ModleStatusCache) modleStatusCache).getAlgorithmContext());
+        CallBaseRequestDto callBaseRequestDto = buildRequest(baseModelImp, baseModleStatusCache.getAlgorithmContext());
         //请求input
         //将请求结果返回给apc平台
-        return callPid(baseModelImp, callBaseRequestDto);
+        return callPid(baseModleStatusCache,baseModelImp, callBaseRequestDto);
     }
 
 
@@ -127,26 +109,13 @@ public class PidModelHandle implements Handle {
     }
 
 
-    @Override
-    public void init() {
-
-    }
 
     @Override
-    public void destory() {
-
-    }
-
-    @Override
-    public BaseModelResponseDto run(BaseModelImp modle) {
+    public BaseModelResponseDto run(BaseModelImp modle,BaseModleStatusCache baseModleStatusCache) {
         inprocess(modle);
-        return docomputeprocess(modle);
+        return docomputeprocess(modle, baseModleStatusCache);
     }
 
-    @Override
-    public void stop(Long modelId) {
-        modelCacheService.deletModelStatus(modelId);
-    }
 
     @Override
     public BaseModelImp convertModel(Adapter adapter) {
@@ -224,84 +193,6 @@ public class PidModelHandle implements Handle {
 
         return pidModle;
     }
-
-
-//    public void updatemodlevalue(PIDModle pidModle){
-//
-//        BaseModlePropertyImp kpbasemodleproperty = Tool.selectmodleProperyByPinname("kp",pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(kpbasemodleproperty!=null){
-//            kpbasemodleproperty.getResource().put("value", getInputparam().getKp());
-//        }
-//
-//        BaseModlePropertyImp kibasemodleproperty = Tool.selectmodleProperyByPinname("ki",pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(kibasemodleproperty!=null){
-//            kibasemodleproperty.getResource().put("value", getInputparam().getKi());
-//        }
-//
-//
-//        BaseModlePropertyImp kdbasemodleproperty = Tool.selectmodleProperyByPinname("kd",pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(kdbasemodleproperty!=null){
-//            kdbasemodleproperty.getResource().put("value", getInputparam().getKd());
-//        }
-//
-//
-//        BaseModlePropertyImp deadZonebasemodleproperty = Tool.selectmodleProperyByPinname("deadZone",pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(deadZonebasemodleproperty!=null){
-//            deadZonebasemodleproperty.getResource().put("value", getInputparam().getDeadZone());
-//        }
-//
-//
-//        BaseModlePropertyImp pvbasemodleproperty = Tool.selectmodleProperyByPinname(MPCModleProperty.TYPE_PIN_PV,pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(pvbasemodleproperty!=null){
-//            pvbasemodleproperty.getResource().put("value", getInputparam().getPv());
-//        }
-//
-//
-//        BaseModlePropertyImp spbasemodleproperty = Tool.selectmodleProperyByPinname(MPCModleProperty.TYPE_PIN_SP,pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(spbasemodleproperty!=null){
-//            spbasemodleproperty.getResource().put("value", getInputparam().getSp());
-//        }
-//
-//
-//        MPCModleProperty initpidmvproperty =
-//                (MPCModleProperty) Tool.selectmodleProperyByPinname(MPCModleProperty.TYPE_PIN_MV,pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(initpidmvproperty!=null){
-//            initpidmvproperty.getResource().put("value", getInputparam().getMv());
-//            initpidmvproperty.setDmvHigh( getInputparam().getDmvHigh());
-//            initpidmvproperty.setDmvLow( getInputparam().getDmvLow());
-//        }
-//
-//
-//        BaseModlePropertyImp initpidmvupproperty =
-//                Tool.selectmodleProperyByPinname(MPCModleProperty.TYPE_PIN_MVUP,pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(initpidmvupproperty!=null){
-//            initpidmvupproperty.getResource().put("value", getInputparam().getMvuppinvalue());
-//        }
-//
-//
-//
-//        BaseModlePropertyImp initpidmvdownproperty =
-//                Tool.selectmodleProperyByPinname(MPCModleProperty.TYPE_PIN_MVDOWN,pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(initpidmvdownproperty!=null){
-//            initpidmvdownproperty.getResource().put("value", getInputparam().getMvdownpinvalue());
-//        }
-//
-//
-//        if ( getInputparam().getFf() != null) {
-//            BaseModlePropertyImp ffbasemodleproperty =
-//                    Tool.selectmodleProperyByPinname(MPCModleProperty.TYPE_PIN_FF,pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//            if(ffbasemodleproperty!=null){
-//                ffbasemodleproperty.getResource().put("value", getInputparam().getFf());
-//            }
-//        }
-//
-//
-//        BaseModlePropertyImp initpidautoproperty =
-//                Tool.selectmodleProperyByPinname(MPCModleProperty.TYPE_PIN_MODLE_AUTO,pidModle.getPropertyImpList(),BaseModleImp.MODLETYPE_INPUT);
-//        if(initpidautoproperty!=null){
-//            initpidautoproperty.getResource().put("value", getInputparam().getAuto());
-//        }
-//    }
 
 
     private BaseModelProperty initpidproperty(String pinname, long modleId, double properyconstant) {
@@ -396,6 +287,9 @@ public class PidModelHandle implements Handle {
         return pidRespon;
     }
 
+    /**
+     * 组装pid请求参数
+     */
     private CallBaseRequestDto buildRequest(BaseModelImp baseModelImp, Object context) {
         JSONObject scriptinput = new JSONObject();
 
@@ -436,7 +330,10 @@ public class PidModelHandle implements Handle {
                 .build();
     }
 
-    public PidResponse4PlantDto callPid(BaseModelImp baseModelImp, CallBaseRequestDto callBaseRequestDto) {
+    /**
+     * 调用pid算法接口
+     */
+    public PidResponse4PlantDto callPid(BaseModleStatusCache baseModleStatusCache, BaseModelImp baseModelImp, CallBaseRequestDto callBaseRequestDto) {
 
         String requestUrl = algorithmRouteConfig.getUrl() + algorithmRouteConfig.getPid();
         ResponseEntity<PidResponseDto> responseEntity = null;
@@ -460,14 +357,9 @@ public class PidModelHandle implements Handle {
 
         PidResponseDto pidResponseDto = responseEntity.getBody();
         //模型缓存上下文更新
-        Object modelStatus = modelCacheService.getModelStatus(baseModelImp.getModleId());
-        if (!ObjectUtils.isEmpty(modelStatus)) {
-            ModleStatusCache modleStatusCache = (ModleStatusCache) modelStatus;
-            modleStatusCache.setAlgorithmContext(pidResponseDto.getAlgorithmContext());
-            modelCacheService.updateModelStatus(baseModelImp.getModleId(), modleStatusCache);
+        if (!ObjectUtils.isEmpty(baseModleStatusCache)) {
+            baseModleStatusCache.setAlgorithmContext(pidResponseDto.getAlgorithmContext());
         }
-
-
         computresulteprocess(baseModelImp, pidResponseDto.getData());
 
         return buildResponse(baseModelImp, pidResponseDto.getData().getMv().getPartkp(), pidResponseDto.getData().getMv().getPartki(), pidResponseDto.getData().getMv().getPartkd(), pidResponseDto.getMessage(), pidResponseDto.getStatus());
