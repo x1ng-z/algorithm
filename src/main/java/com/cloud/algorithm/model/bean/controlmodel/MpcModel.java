@@ -219,7 +219,7 @@ public class MpcModel extends BaseModelImp {
     private Integer controltime_M;//单一控制输入未来控制M步增量(控制域)
     private Integer timeserise_N;//响应序列长度
     private Integer controlAPCOutCycle;//控制周期
-    private Integer runstyle = 0;//运行方式0-自动分配模式 1-手动分配模式
+    private Integer runstyle = 0;//运行方式0-自动分配模式 1-手动分配模式(2022年3月16日之前)，目前这个属性改为误差需要需要归一化，就是除上误差绝对值的最大值
     /**************/
     private List<ResponTimeSerise> responTimeSeriseList;
 }

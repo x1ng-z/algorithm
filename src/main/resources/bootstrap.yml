@@ -20,7 +20,7 @@ server:
   port: 1234
 
 xalgorithmroute:
-  url: http://192.168.10.212:88
+  url: http://127.0.0.1:8001
 
 
 

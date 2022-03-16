@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @SpringBootTest
-class AlgorithmApplicationTests implements KeyGenerant {
+class AlgorithmControllerApplicationTests implements KeyGenerant {
 
 
     @Autowired

@@ -16,6 +16,7 @@ public class DmcBasemodleparam {
     private String predicttime_P;
     private String timeserise_N;
     private String controltime_M;
+    //设置运行方式，这里有原来的计算方式有最小误差和自动分配，改为是否归一化和不归一化，除不除上偏差绝对值的最大值
     private int runstyle;
     private double auto;
     private double controlapcoutcycle;

@@ -29,7 +29,7 @@ import javax.validation.Valid;
 @RestController
 @RefreshScope
 @Slf4j
-public class Algorithm {
+public class AlgorithmController {
 
     @Value("${isCache:false}")
     private Boolean iscahce;
@@ -58,8 +58,6 @@ public class Algorithm {
         BaseModelResponseDto baseModelResponseDto = algorithmModelSerice.run(mpcModel.getModleId(), AlgorithmName.MPC_MODEL.getCode(), mpcModel);//dmchandle.run(mpcModel);
 
         return new ResponseEntity<String>(JSON.toJSONString(baseModelResponseDto), HttpStatus.OK);
-
-
     }
 
 

@@ -71,7 +71,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
     }
 
     @Override
-    public BaseModelResponseDto run(BaseModelImp modle,BaseModleStatusCache baseModleStatusCache/*在切面中会进行注入*/) {
+    public BaseModelResponseDto run(BaseModelImp modle, BaseModleStatusCache baseModleStatusCache/*在切面中会进行注入*/) {
         MpcModel mpcModel = (MpcModel) modle;
         mpcModel.setTotalPv(mpcConfig.getNumPv());
         mpcModel.setTotalMv(mpcConfig.getNumMv());
@@ -79,7 +79,6 @@ public class MpcModelHandle implements Handle, BoundCondition {
         inprocess(modle);
         return docomputeprocess(modle, baseModleStatusCache);
     }
-
 
 
     @Override
@@ -492,6 +491,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
         scriptinput.put("APCOutCycle", mpcModel.getControlAPCOutCycle());
         scriptinput.put("enable", mpcModel.getModleEnable());
         scriptinput.put("funneltype", mpcModel.getFunneltype());
+        scriptinput.put("runStyle",mpcModel.getRunstyle());//这里添加进去判断是否误差需要归一化
 
         /***mv*/
         if (mpcModel.getNumOfRunnablePVPins_pp() != 0) {
@@ -1353,7 +1353,7 @@ public class MpcModelHandle implements Handle, BoundCondition {
         mpc.setPredicttime_P(Integer.parseInt(dmcBasemodleparam.getPredicttime_P()));
         mpc.setTimeserise_N(Integer.parseInt(dmcBasemodleparam.getTimeserise_N()));
         mpc.setControltime_M(Integer.parseInt(dmcBasemodleparam.getControltime_M()));
-        mpc.setRunstyle(0);//默认自动分配
+        mpc.setRunstyle(dmcModleAdapter.getBasemodelparam().getRunstyle());
         mpc.setModleId(dmcBasemodleparam.getModelid());
         mpc.setControlAPCOutCycle(Double.valueOf(dmcBasemodleparam.getControlapcoutcycle()).intValue());
 
